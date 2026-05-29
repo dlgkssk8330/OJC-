@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OJC 수입품목 발주 검토</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="header-logo">OJC</div>
+    <div>
+      <h1>수입품목 발주 검토</h1>
+      <p class="header-sub">SCM팀 · 기준일: 2026-03-27</p>
+    </div>
+    <div class="header-right">
+      <span id="headerDate" class="header-date"></span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- Stats Row -->
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card" data-filter="all">
+      <span class="stat-num" id="cnt-all">0</span>
+      <span class="stat-lbl">전체 품목</span>
+    </div>
+    <div class="stat-card stat-order" data-filter="order">
+      <span class="stat-num" id="cnt-order">0</span>
+      <span class="stat-lbl">발주예정</span>
+    </div>
+    <div class="stat-card stat-danger" data-filter="danger">
+      <span class="stat-num" id="cnt-danger">0</span>
+      <span class="stat-lbl">재고부족 위험<small>(가용 &lt;2개월)</small></span>
+    </div>
+    <div class="stat-card stat-inc" data-filter="inc">
+      <span class="stat-num" id="cnt-inc">0</span>
+      <span class="stat-lbl">판매 증가</span>
+    </div>
+    <div class="stat-card stat-dec" data-filter="dec">
+      <span class="stat-num" id="cnt-dec">0</span>
+      <span class="stat-lbl">판매 감소</span>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="card toolbar-card">
+    <div class="toolbar-row">
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="all">전체</button>
+        <button class="filter-btn" data-filter="order">발주예정</button>
+        <button class="filter-btn filter-danger" data-filter="danger">재고부족 위험</button>
+        <button class="filter-btn filter-inc" data-filter="inc">판매 증가</button>
+        <button class="filter-btn filter-dec" data-filter="dec">판매 감소</button>
+      </div>
+      <div class="toolbar-controls">
+        <select id="supplierFilter" class="select-filter">
+          <option value="">전체 구매처</option>
+        </select>
+        <select id="orderFilter" class="select-filter">
+          <option value="">발주예정 전체</option>
+          <option value="hasOrder">발주예정 있음</option>
+          <option value="noOrder">발주예정 없음</option>
+        </select>
+        <input type="text" id="searchBox" class="search-box" placeholder="품목코드 · 품목명 검색">
+        <button id="btnResetFilter" class="btn btn-ghost">필터 초기화</button>
+      </div>
+    </div>
+    <div class="result-info" id="resultInfo"></div>
+  </div>
+
+  <!-- Table Card -->
+  <div class="card table-card">
+    <div class="table-scroll">
+      <table id="mainTable">
+        <thead>
+          <tr>
+            <th class="th-seq">순번</th>
+            <th class="th-code sortable" data-col="code">품목코드</th>
+            <th class="th-name sortable" data-col="name">품목명</th>
+            <th class="th-spec">규격</th>
+            <th class="th-supplier sortable" data-col="supplier">구매처</th>
+            <th class="th-avg sortable" data-col="avg26">26년<br>월평균</th>
+            <th class="th-avg sortable" data-col="avg2425">24-25년<br>월평균</th>
+            <th class="th-trend sortable" data-col="trend">판매추이</th>
+            <th class="th-lt">리드타임<small>(일)</small></th>
+            <th class="th-stock sortable" data-col="stock">재고수량</th>
+            <th class="th-avail sortable" data-col="availMo">가용재고<small>(월)</small></th>
+            <th class="th-incoming sortable" data-col="incoming">입고예정</th>
+            <th class="th-avail-incl sortable" data-col="availMoIncl">입고포함<br>가용(월)</th>
+            <th class="th-order sortable" data-col="orderQty">발주예정량</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyMain"></tbody>
+      </table>
+    </div>
+    <div id="emptyMsg" class="empty-msg hidden">조건에 맞는 항목이 없습니다.</div>
+  </div>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
