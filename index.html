@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OJC 수입품목 발주 검토</title>
+  <title>OJC 수입품목 발주 계획</title>
   <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -12,100 +14,420 @@
   <div class="header-inner">
     <div class="header-logo">OJC</div>
     <div>
-      <h1>수입품목 발주 검토</h1>
-      <p class="header-sub">SCM팀 · 기준일: 2026-03-27</p>
+      <h1>수입품목 발주 계획</h1>
+      <p class="header-sub" id="headerSub">데이터 로딩 중…</p>
     </div>
     <div class="header-right">
-      <span id="headerDate" class="header-date"></span>
+      <span id="syncStatus" class="sync-badge"></span>
+      <button id="btnSave"  class="btn-hdr">💾 저장</button>
+      <button id="btnReset" class="btn-hdr">↺ 초기화</button>
     </div>
   </div>
 </header>
 
 <main>
-
-  <!-- Stats Row -->
+  <!-- 통계 카드 -->
   <div class="stats-row" id="statsRow">
     <div class="stat-card" data-filter="all">
       <span class="stat-num" id="cnt-all">0</span>
       <span class="stat-lbl">전체 품목</span>
     </div>
-    <div class="stat-card stat-order" data-filter="order">
-      <span class="stat-num" id="cnt-order">0</span>
-      <span class="stat-lbl">발주예정</span>
+    <div class="stat-card s-urgent" data-filter="urgent">
+      <span class="stat-num" id="cnt-urgent">0</span>
+      <span class="stat-lbl">🔴 즉시발주<small>가용 2개월 미만</small></span>
     </div>
-    <div class="stat-card stat-danger" data-filter="danger">
-      <span class="stat-num" id="cnt-danger">0</span>
-      <span class="stat-lbl">재고부족 위험<small>(가용 &lt;2개월)</small></span>
+    <div class="stat-card s-warning" data-filter="warning">
+      <span class="stat-num" id="cnt-warning">0</span>
+      <span class="stat-lbl">🟡 발주검토<small>2~4개월</small></span>
     </div>
-    <div class="stat-card stat-inc" data-filter="inc">
-      <span class="stat-num" id="cnt-inc">0</span>
-      <span class="stat-lbl">판매 증가</span>
+    <div class="stat-card s-ok" data-filter="ok">
+      <span class="stat-num" id="cnt-ok">0</span>
+      <span class="stat-lbl">🟢 여유<small>4개월 이상</small></span>
     </div>
-    <div class="stat-card stat-dec" data-filter="dec">
-      <span class="stat-num" id="cnt-dec">0</span>
-      <span class="stat-lbl">판매 감소</span>
+    <div class="stat-card s-confirmed" data-filter="confirmed">
+      <span class="stat-num" id="cnt-confirmed">0</span>
+      <span class="stat-lbl">✅ 발주확정</span>
     </div>
   </div>
 
-  <!-- Toolbar -->
-  <div class="card toolbar-card">
-    <div class="toolbar-row">
-      <div class="filter-group">
-        <button class="filter-btn active" data-filter="all">전체</button>
-        <button class="filter-btn" data-filter="order">발주예정</button>
-        <button class="filter-btn filter-danger" data-filter="danger">재고부족 위험</button>
-        <button class="filter-btn filter-inc" data-filter="inc">판매 증가</button>
-        <button class="filter-btn filter-dec" data-filter="dec">판매 감소</button>
-      </div>
-      <div class="toolbar-controls">
-        <select id="supplierFilter" class="select-filter">
-          <option value="">전체 구매처</option>
-        </select>
-        <select id="orderFilter" class="select-filter">
-          <option value="">발주예정 전체</option>
-          <option value="hasOrder">발주예정 있음</option>
-          <option value="noOrder">발주예정 없음</option>
-        </select>
-        <input type="text" id="searchBox" class="search-box" placeholder="품목코드 · 품목명 검색">
-        <button id="btnResetFilter" class="btn btn-ghost">필터 초기화</button>
-      </div>
-    </div>
-    <div class="result-info" id="resultInfo"></div>
+  <!-- 탭 바 -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="plan">📋 발주 계획</button>
+    <button class="tab-btn"        data-tab="upload">📤 데이터 업로드</button>
+    <button class="tab-btn"        data-tab="cost">💰 원가 관리</button>
+    <button class="tab-btn"        data-tab="confirmed">✅ 발주 확정 목록</button>
+    <button class="tab-btn"        data-tab="incoming">🚢 입고 예정</button>
+    <button class="tab-btn"        data-tab="sync">☁ 동기화 설정</button>
   </div>
 
-  <!-- Table Card -->
-  <div class="card table-card">
-    <div class="table-scroll">
-      <table id="mainTable">
-        <thead>
-          <tr>
-            <th class="th-seq">순번</th>
-            <th class="th-code sortable" data-col="code">품목코드</th>
-            <th class="th-name sortable" data-col="name">품목명</th>
-            <th class="th-spec">규격</th>
-            <th class="th-supplier sortable" data-col="supplier">구매처</th>
-            <th class="th-avg sortable" data-col="avg26">26년<br>월평균</th>
-            <th class="th-avg sortable" data-col="avg2425">24-25년<br>월평균</th>
-            <th class="th-trend sortable" data-col="trend">판매추이</th>
-            <th class="th-lt">리드타임<small>(일)</small></th>
-            <th class="th-stock sortable" data-col="stock">재고수량</th>
-            <th class="th-avail sortable" data-col="availMo">가용재고<small>(월)</small></th>
-            <th class="th-incoming sortable" data-col="incoming">입고예정</th>
-            <th class="th-avail-incl sortable" data-col="availMoIncl">입고포함<br>가용(월)</th>
-            <th class="th-order sortable" data-col="orderQty">발주예정량</th>
-          </tr>
-        </thead>
-        <tbody id="tbodyMain"></tbody>
-      </table>
+  <!-- ───────── TAB: 발주 계획 ───────── -->
+  <div id="tab-plan" class="tab-panel">
+    <div class="card toolbar-card">
+      <div class="toolbar-row">
+        <div class="filter-group">
+          <button class="filter-btn active" data-filter="all">전체</button>
+          <button class="filter-btn f-urgent"    data-filter="urgent">🔴 즉시발주</button>
+          <button class="filter-btn f-warning"   data-filter="warning">🟡 발주검토</button>
+          <button class="filter-btn f-ok"        data-filter="ok">🟢 여유</button>
+          <button class="filter-btn f-confirmed" data-filter="confirmed">✅ 확정</button>
+        </div>
+        <div class="toolbar-right">
+          <select id="supplierFilter" class="sel-filter"><option value="">전체 구매처</option></select>
+          <select id="trendFilter" class="sel-filter">
+            <option value="">판매추이 전체</option>
+            <option value="증가">↑ 증가</option>
+            <option value="감소">↓ 감소</option>
+          </select>
+          <label class="toggle-label">
+            <input type="checkbox" id="showCostCols"> 원가 비교 표시
+          </label>
+          <input type="text" id="searchBox" class="search-box" placeholder="품목코드·품목명 검색">
+        </div>
+      </div>
+      <div class="toolbar-info" id="resultInfo"></div>
     </div>
-    <div id="emptyMsg" class="empty-msg hidden">조건에 맞는 항목이 없습니다.</div>
+
+    <div class="card table-card">
+      <div class="table-scroll">
+        <table id="mainTable">
+          <thead>
+            <tr>
+              <th class="th-chk"><input type="checkbox" id="chkAll"></th>
+              <th class="th-urg  sortable" data-col="urgency">긴급도</th>
+              <th class="th-code sortable" data-col="code">품목코드</th>
+              <th class="th-name sortable" data-col="name">품목명</th>
+              <th class="th-spec">규격</th>
+              <th class="th-sup">구매처</th>
+              <th class="th-avg  sortable" data-col="avg_cur">월평균<br><small>당년</small></th>
+              <th class="th-avg  sortable" data-col="avg_prev">월평균<br><small>전년</small></th>
+              <th class="th-trend sortable" data-col="trend">판매추이</th>
+              <th class="th-lt">리드<br>타임</th>
+              <th class="th-stock sortable" data-col="stock">현재고</th>
+              <th class="th-inc">입고예정</th>
+              <th class="th-avail sortable" data-col="avail_mo_incl">가용재고<br><small>(입고포함·월)</small></th>
+              <th class="th-proj">발주후<br>예상가용</th>
+              <th class="th-rec  sortable" data-col="recQty">권장<br>발주량</th>
+              <th class="th-order">발주수량</th>
+              <!-- 원가 칼럼 (토글) -->
+              <th class="th-cost cost-col">수입가격</th>
+              <th class="th-cost cost-col">맥산<br>생산원가</th>
+              <th class="th-cost cost-col">생산원가</th>
+              <th class="th-cost cost-col">표준원가<br><small id="ratioLabel"></small></th>
+              <th class="th-cost cost-col">맥산vs수입</th>
+              <th class="th-cost cost-col">표준vs수입</th>
+              <!-- 끝 -->
+              <th class="th-timing">발주시기</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyMain"></tbody>
+          <tfoot id="tfootMain"></tfoot>
+        </table>
+      </div>
+      <div id="emptyMsg" class="empty-msg hidden">조건에 맞는 항목이 없습니다.</div>
+    </div>
+
+    <div class="bulk-bar" id="bulkBar">
+      <span id="bulkCount"></span>
+      <button id="btnBulkConfirm" class="btn btn-primary">✅ 선택 발주 확정</button>
+      <button id="btnBulkCancel"  class="btn btn-ghost-sm">취소</button>
+    </div>
+  </div>
+
+  <!-- ───────── TAB: 데이터 업로드 ───────── -->
+  <div id="tab-upload" class="tab-panel hidden">
+    <div class="card" style="padding:24px; max-width:760px; margin:0 auto">
+      <h2 class="sec-title">📤 재고·판매 데이터 업로드</h2>
+      <p class="sec-desc">템플릿을 다운로드 → 데이터 입력 → 업로드하면 발주 수량이 자동 산출됩니다.</p>
+
+      <div class="upload-step">
+        <div class="step-badge">STEP 1</div>
+        <div class="step-body">
+          <strong>템플릿 다운로드</strong>
+          <p>아래 버튼으로 업로드 양식(CSV)을 받으세요.</p>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-outline" onclick="APP.downloadTemplate()">📥 발주검토 템플릿 다운로드</button>
+            <button class="btn btn-outline" onclick="APP.downloadPriceTemplate()">📥 가격 템플릿 다운로드</button>
+          <p style="font-size:11px;color:#64748b;margin-top:8px">
+            💡 가격 업로드 시 <strong>공란 항목은 기존 저장값을 유지</strong>합니다.
+            값을 지우려면 원가 관리 탭에서 직접 수정하세요.
+          </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="upload-step">
+        <div class="step-badge">STEP 2</div>
+        <div class="step-body">
+          <strong>작업자 이름 입력 <span class="req">*필수</span></strong>
+          <input type="text" id="uploaderName" class="form-input" placeholder="이름을 입력하세요" style="width:220px;margin-top:6px">
+        </div>
+      </div>
+
+      <div class="upload-step">
+        <div class="step-badge">STEP 3</div>
+        <div class="step-body">
+          <strong>파일 업로드</strong>
+          <div id="dropzone" class="dropzone" onclick="document.getElementById('uploadFileInput').click()">
+            <div class="dz-icon">📋</div>
+            <div class="dz-text">파일을 드래그하거나 클릭</div>
+            <div class="dz-sub">.xlsx · .xls · .csv</div>
+          </div>
+          <input type="file" id="uploadFileInput" accept=".xlsx,.xls,.csv" hidden>
+          <div id="uploadPreview" class="upload-preview hidden"></div>
+        </div>
+      </div>
+
+      <div class="upload-step">
+        <div class="step-badge">STEP 4</div>
+        <div class="step-body">
+          <strong>업로드 확인</strong>
+          <div id="uploadColMap" class="col-map-grid hidden"></div>
+          <button id="btnConfirmUpload" class="btn btn-primary" disabled style="margin-top:12px">
+            ✅ 업로드 확정
+          </button>
+        </div>
+      </div>
+
+      <div id="uploadHistory" class="upload-history">
+        <h3 style="font-size:13px;font-weight:700;margin-bottom:8px">📅 업로드 이력</h3>
+        <div id="uploadHistoryList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── TAB: 원가 관리 ───────── -->
+  <div id="tab-cost" class="tab-panel hidden">
+    <div class="card" style="padding:20px">
+      <div class="cost-header">
+        <div>
+          <h2 class="sec-title">💰 원가 관리</h2>
+          <p class="sec-desc">수입가격 · 맥산생산원가 · 생산원가 · 표준원가를 관리합니다.
+            표준원가 = 생산원가 × <strong id="ratioDisplay">1.15</strong>
+            <button class="btn btn-ghost-xs" id="btnEditRatio">비율 변경</button>
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-outline" id="btnDownloadPrice">🔒 가격 다운로드</button>
+          <button class="btn btn-outline" id="btnUploadPrice">📤 가격 업로드</button>
+          <button class="btn btn-outline" id="btnPriceHistory">📋 전체 이력</button>
+        </div>
+      </div>
+      <input type="file" id="priceFileInput" accept=".xlsx,.xls,.csv" hidden>
+
+      <!-- 검색 -->
+      <div style="margin:12px 0">
+        <input type="text" id="costSearch" class="search-box" placeholder="품목코드·품목명 검색">
+        <span id="costResultInfo" style="font-size:11px;color:#94a3b8;margin-left:10px"></span>
+      </div>
+
+      <div class="table-scroll">
+        <table id="costTable">
+          <thead>
+            <tr>
+              <th style="width:110px">품목코드</th>
+              <th style="width:200px">품목명</th>
+              <th style="width:100px;text-align:right">수입가격</th>
+              <th style="width:110px;text-align:right">맥산생산원가</th>
+              <th style="width:100px;text-align:right">생산원가</th>
+              <th style="width:100px;text-align:right">표준원가</th>
+              <th style="width:100px;text-align:center">맥산 vs 수입<small style="display:block;font-weight:400;color:#94a3b8">맥산원가 비교</small></th>
+              <th style="width:100px;text-align:center">표준 vs 수입<small style="display:block;font-weight:400;color:#94a3b8">표준원가 비교</small></th>
+              <th style="width:120px">최종수정</th>
+              <th style="width:70px">이력</th>
+              <th style="width:60px">수정</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyCost"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── TAB: 발주 확정 목록 ───────── -->
+  <div id="tab-confirmed" class="tab-panel hidden">
+    <div class="card" style="padding:20px">
+      <div class="cost-header">
+        <div>
+          <h2 class="sec-title">✅ 발주 확정 목록</h2>
+          <p class="sec-desc" id="confirmSummaryText"></p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="window.print()">🖨 인쇄</button>
+          <button id="btnExportConfirm" class="btn btn-primary">📥 CSV 다운로드</button>
+        </div>
+      </div>
+      <div id="confirmContent"></div>
+    </div>
+  </div>
+
+  <!-- ───────── TAB: 입고 예정 ───────── -->
+  <div id="tab-incoming" class="tab-panel hidden">
+    <div class="card" style="padding:20px">
+      <h2 class="sec-title" style="margin-bottom:14px">
+        🚢 입고 예정 현황 <small style="font-size:12px;color:#64748b;font-weight:400">총 <span id="incomingTotal">0</span>건</small>
+      </h2>
+      <div class="table-scroll">
+        <table id="incomingTable">
+          <thead>
+            <tr>
+              <th>발주#</th><th>부서</th><th>품번</th><th>품목명</th>
+              <th style="text-align:right">발주수량</th>
+              <th>실발주일</th><th>ETA</th><th>입고예정일</th><th>입고지</th><th>비고</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyIncoming"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── TAB: 동기화 설정 ───────── -->
+  <div id="tab-sync" class="tab-panel hidden">
+    <div class="card" style="padding:24px;max-width:640px;margin:0 auto">
+      <h2 class="sec-title">☁ Supabase 동기화 설정</h2>
+      <div id="syncConnStatus" class="sync-status-box"></div>
+
+      <div class="form-section">
+        <label class="form-label">Supabase URL</label>
+        <input type="text" id="sbUrl" class="form-input" placeholder="https://xxxx.supabase.co">
+      </div>
+      <div class="form-section">
+        <label class="form-label">Supabase Anon Key</label>
+        <input type="text" id="sbKey" class="form-input" placeholder="eyJ...">
+      </div>
+      <button id="btnSbSave" class="btn btn-primary" style="margin-top:8px">설정 저장 & 연결 테스트</button>
+
+      <hr style="margin:24px 0;border:none;border-top:1px solid #e2e8f0">
+
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:12px">🔑 관리자 비밀번호 설정</h3>
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px">
+        가격 데이터 다운로드 시 입력을 요구하는 비밀번호입니다.
+      </p>
+      <div class="form-section">
+        <label class="form-label">현재 관리자 비밀번호</label>
+        <input type="password" id="currentPw" class="form-input" placeholder="현재 비밀번호 (최초 설정 시 빈칸)">
+      </div>
+      <div class="form-section">
+        <label class="form-label">새 비밀번호</label>
+        <input type="password" id="newPw" class="form-input" placeholder="새 비밀번호">
+      </div>
+      <div class="form-section">
+        <label class="form-label">새 비밀번호 확인</label>
+        <input type="password" id="newPwConfirm" class="form-input" placeholder="새 비밀번호 재입력">
+      </div>
+      <button id="btnChangePw" class="btn btn-primary">비밀번호 변경</button>
+      <p id="pwMsg" style="font-size:12px;margin-top:8px"></p>
+
+      <hr style="margin:24px 0;border:none;border-top:1px solid #e2e8f0">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:12px">📋 다운로드 감사 로그 (관리자)</h3>
+      <button id="btnViewDlLog" class="btn btn-outline">🔒 로그 조회</button>
+      <div id="dlLogContent" style="margin-top:12px"></div>
+    </div>
   </div>
 
 </main>
 
 <div id="toast" class="toast"></div>
 
+<!-- ── 가격 편집 모달 ── -->
+<div id="priceModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>원가 수정</h2>
+        <p id="priceModalItem" class="modal-sub"></p>
+      </div>
+      <button class="modal-x" onclick="closePriceModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-section">
+        <label class="form-label">작업자 이름 <span class="req">*필수</span></label>
+        <input type="text" id="priceWorker" class="form-input" placeholder="이름 입력">
+      </div>
+      <div class="price-grid">
+        <div class="price-field">
+          <label>수입가격</label>
+          <input type="number" id="pImport"  class="form-input" min="0" step="0.01" placeholder="0">
+        </div>
+        <div class="price-field">
+          <label>맥산생산원가</label>
+          <input type="number" id="pMaeksan" class="form-input" min="0" step="0.01" placeholder="0">
+        </div>
+        <div class="price-field">
+          <label>생산원가</label>
+          <input type="number" id="pProd"    class="form-input" min="0" step="0.01" placeholder="0"
+            oninput="updateStdCostPreview()">
+        </div>
+        <div class="price-field">
+          <label>표준원가비율 <small style="color:#94a3b8">(빈칸=전역 <span id="modalRatioHint"></span>)</small></label>
+          <input type="number" id="pRatio"   class="form-input" min="0" step="0.01" placeholder=""
+            oninput="updateStdCostPreview()">
+        </div>
+        <div class="price-field" style="grid-column:span 2;background:#f8fafc;padding:10px;border-radius:8px">
+          <label>표준원가 (자동계산)</label>
+          <div id="stdCostPreview" style="font-size:20px;font-weight:800;color:#2563eb;margin-top:4px">—</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px">생산원가 × 비율</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button id="btnSavePriceModal" class="btn btn-primary">저장</button>
+      <button class="btn btn-ghost" onclick="closePriceModal()">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 가격 이력 모달 ── -->
+<div id="histModal" class="modal-backdrop hidden">
+  <div class="modal modal-wide">
+    <div class="modal-head">
+      <div>
+        <h2>가격 변경 이력</h2>
+        <p id="histModalItem" class="modal-sub"></p>
+      </div>
+      <button class="modal-x" onclick="closeHistModal()">&times;</button>
+    </div>
+    <div class="modal-body" style="max-height:440px;overflow-y:auto">
+      <div id="histModalContent"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeHistModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 관리자 비밀번호 확인 모달 ── -->
+<div id="adminModal" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-head">
+      <h2>🔒 관리자 인증</h2>
+      <button class="modal-x" onclick="closeAdminModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:#64748b;margin-bottom:14px" id="adminModalDesc">
+        가격 데이터 다운로드를 위해 관리자 비밀번호와 이름을 입력하세요.
+      </p>
+      <div class="form-section">
+        <label class="form-label">이름 <span class="req">*</span></label>
+        <input type="text" id="adminActorName" class="form-input" placeholder="이름 입력">
+      </div>
+      <div class="form-section">
+        <label class="form-label">관리자 비밀번호 <span class="req">*</span></label>
+        <input type="password" id="adminPwInput" class="form-input" placeholder="비밀번호">
+      </div>
+      <p id="adminPwError" style="color:#dc2626;font-size:12px;margin-top:4px"></p>
+    </div>
+    <div class="modal-foot">
+      <button id="btnAdminConfirm" class="btn btn-primary">확인</button>
+      <button class="btn btn-ghost" onclick="closeAdminModal()">취소</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/db.js"></script>
 <script src="js/data.js"></script>
+<script src="js/incoming.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

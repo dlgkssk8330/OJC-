@@ -1,0 +1,16 @@
+# 원본 엑셀 파일 (대외비 - 배포 제외)
+*.xlsx
+*.xls
+*.xlsm
+
+# 추출된 로컬 JSON
+data.json
+
+# 시스템
+desktop.ini
+.DS_Store
+Thumbs.db
+
+# 에디터
+.vscode/
+*.swp
