@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS order_plan (
 
 -- ── 기본 설정값 삽입 ───────────────────────────────────────
 INSERT INTO settings (key, value, updated_by) VALUES
-  ('std_cost_ratio',   '1.15',   'system'),  -- 표준원가 = 생산원가 × 1.15
+  ('std_cost_ratio',   '1.39',   'system'),  -- 표준원가 = 생산원가 × 1.39
   ('admin_pw_hash',    '',       'system'),  -- 관리자 비밀번호 해시 (초기 미설정)
   ('app_name',         'OJC 수입품목 발주 계획', 'system')
 ON CONFLICT (key) DO NOTHING;

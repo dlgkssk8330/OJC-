@@ -54,6 +54,7 @@
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="plan">📋 발주 계획</button>
     <button class="tab-btn"        data-tab="upload">📤 데이터 업로드</button>
+    <button class="tab-btn"        data-tab="sales">📊 판매현황 분석</button>
     <button class="tab-btn"        data-tab="cost">💰 원가 관리</button>
     <button class="tab-btn"        data-tab="confirmed">✅ 발주 확정 목록</button>
     <button class="tab-btn"        data-tab="incoming">🚢 입고 예정</button>
@@ -82,7 +83,19 @@
             <input type="checkbox" id="showCostCols"> 원가 비교 표시
           </label>
           <input type="text" id="searchBox" class="search-box" placeholder="품목코드·품목명 검색">
+          <button id="btnResetCf" class="btn btn-ghost hidden" onclick="resetColFilters()" style="font-size:12px;white-space:nowrap">✕ 열 필터 초기화</button>
         </div>
+      </div>
+      <!-- 일괄 발주수량 계산 행 -->
+      <div class="toolbar-row bulk-months-row">
+        <span style="font-size:12px;color:#64748b;font-weight:600;white-space:nowrap">📅 일괄 발주수량 계산</span>
+        <span style="font-size:11px;color:#94a3b8;white-space:nowrap">발주 후 목표 가용:</span>
+        <input type="number" id="bulkMonthsInput" class="order-input"
+          style="width:72px" min="0" step="0.5" placeholder="개월">
+        <span style="font-size:11px;color:#94a3b8">개월</span>
+        <button id="btnBulkMonths" class="btn btn-primary" style="font-size:12px">일괄 적용</button>
+        <span id="bulkMonthsInfo" style="font-size:11px;color:var(--ok);font-weight:600"></span>
+        <span style="font-size:11px;color:#94a3b8;margin-left:auto">※ 확정된 항목 제외 · 월평균 없는 품목 제외</span>
       </div>
       <div class="toolbar-info" id="resultInfo"></div>
     </div>
@@ -93,30 +106,32 @@
           <thead>
             <tr>
               <th class="th-chk"><input type="checkbox" id="chkAll"></th>
-              <th class="th-urg  sortable" data-col="urgency">긴급도</th>
-              <th class="th-code sortable" data-col="code">품목코드</th>
-              <th class="th-name sortable" data-col="name">품목명</th>
-              <th class="th-spec">규격</th>
-              <th class="th-sup">구매처</th>
+              <th class="th-proc">조달방식 <button class="cf-btn" data-col="cf_proc" onclick="event.stopPropagation();openColFilter('cf_proc',this)">▾</button></th>
+              <th class="th-urg  sortable" data-col="urgency">긴급도 <button class="cf-btn" data-col="cf_urgency" onclick="event.stopPropagation();openColFilter('cf_urgency',this)">▾</button></th>
+              <th class="th-code sortable" data-col="code">품목코드 <button class="cf-btn" data-col="cf_code" onclick="event.stopPropagation();openColFilter('cf_code',this)">▾</button></th>
+              <th class="th-name sortable" data-col="name">품목명 <button class="cf-btn" data-col="cf_name" onclick="event.stopPropagation();openColFilter('cf_name',this)">▾</button></th>
+              <th class="th-spec">규격 <button class="cf-btn" data-col="cf_spec" onclick="event.stopPropagation();openColFilter('cf_spec',this)">▾</button></th>
+              <th class="th-sup">구매처 <button class="cf-btn" data-col="cf_supplier" onclick="event.stopPropagation();openColFilter('cf_supplier',this)">▾</button></th>
               <th class="th-avg  sortable" data-col="avg_cur">월평균<br><small>당년</small></th>
               <th class="th-avg  sortable" data-col="avg_prev">월평균<br><small>전년</small></th>
-              <th class="th-trend sortable" data-col="trend">판매추이</th>
-              <th class="th-lt">리드<br>타임</th>
+              <th class="th-trend sortable" data-col="trend">판매추이 <button class="cf-btn" data-col="cf_trend" onclick="event.stopPropagation();openColFilter('cf_trend',this)">▾</button></th>
+              <th class="th-lt">리드<br>타임 <button class="cf-btn" data-col="cf_leadtime" onclick="event.stopPropagation();openColFilter('cf_leadtime',this)">▾</button></th>
               <th class="th-stock sortable" data-col="stock">현재고</th>
               <th class="th-inc">입고예정</th>
-              <th class="th-avail sortable" data-col="avail_mo_incl">가용재고<br><small>(입고포함·월)</small></th>
+              <th class="th-avail sortable" data-col="avail_mo_incl">가용재고<br><small>(입고포함·월)</small> <button class="cf-btn" data-col="cf_avail" onclick="event.stopPropagation();openColFilter('cf_avail',this)">▾</button></th>
               <th class="th-proj">발주후<br>예상가용</th>
               <th class="th-rec  sortable" data-col="recQty">권장<br>발주량</th>
               <th class="th-order">발주수량</th>
               <!-- 원가 칼럼 (토글) -->
               <th class="th-cost cost-col">수입가격</th>
               <th class="th-cost cost-col">맥산<br>생산원가</th>
-              <th class="th-cost cost-col">생산원가</th>
+              <th class="th-cost cost-col">생산원가<br><small style="font-weight:400;color:#94a3b8">min(수입,맥산)</small></th>
               <th class="th-cost cost-col">표준원가<br><small id="ratioLabel"></small></th>
               <th class="th-cost cost-col">맥산vs수입</th>
-              <th class="th-cost cost-col">표준vs수입</th>
+              <th class="th-cost cost-col">손익금액<br><small style="font-weight:400;color:#94a3b8">1개 판매 시</small></th>
+              <th class="th-cost cost-col">수익률<br><small style="font-weight:400;color:#94a3b8">(판매가-표준)/판매가</small></th>
               <!-- 끝 -->
-              <th class="th-timing">발주시기</th>
+              <th class="th-timing">발주시기 <button class="cf-btn" data-col="cf_timing" onclick="event.stopPropagation();openColFilter('cf_timing',this)">▾</button></th>
             </tr>
           </thead>
           <tbody id="tbodyMain"></tbody>
@@ -188,10 +203,129 @@
         </div>
       </div>
 
+      <!-- ── 재고현황 업데이트 섹션 ── -->
+      <div style="border-top:2px solid var(--border);margin-top:24px;padding-top:24px">
+        <h2 class="sec-title">📦 재고현황 업데이트</h2>
+        <p class="sec-desc">실제 재고현황 파일을 업로드하거나 수기로 수량을 입력합니다.</p>
+
+        <!-- 입력 방법 탭 -->
+        <div class="stock-tabs">
+          <button class="stock-tab-btn active" data-method="file">📁 파일 업로드</button>
+          <button class="stock-tab-btn" data-method="manual">✏️ 수기 입력</button>
+        </div>
+
+        <!-- 파일 업로드 방식 -->
+        <div id="stockFileSection">
+          <p style="font-size:12px;color:#64748b;margin-bottom:8px">
+            지원 형식: <code>품목코드 · 품목명 · 규격명 · 재고수량</code> 컬럼이 있는 xlsx/csv
+            <br>상단 제목행(회사명…)이 있어도 자동 인식됩니다.
+          </p>
+          <div id="stockDropzone" class="dropzone" onclick="document.getElementById('stockFileInput').click()">
+            <div class="dz-icon">📦</div>
+            <div class="dz-text">재고현황 파일을 드래그하거나 클릭</div>
+            <div class="dz-sub">.xlsx · .xls · .csv</div>
+          </div>
+          <input type="file" id="stockFileInput" accept=".xlsx,.xls,.csv" hidden>
+          <div id="stockFilePreview" class="upload-preview hidden"></div>
+        </div>
+
+        <!-- 수기 입력 방식 -->
+        <div id="stockManualSection" class="hidden">
+          <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+            <input type="text" id="stockManualSearch" class="search-box"
+              placeholder="품목코드·품목명 검색" style="width:220px"
+              oninput="renderStockManualTable(this.value)">
+            <span id="stockManualInfo" style="font-size:11px;color:#94a3b8"></span>
+          </div>
+          <div style="overflow:auto;max-height:360px;border:1px solid var(--border);border-radius:8px">
+            <table id="stockManualTable" style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#f8fafc;position:sticky;top:0;z-index:2">
+                  <th style="padding:7px 10px;border-bottom:2px solid var(--border);width:120px">품목코드</th>
+                  <th style="padding:7px 10px;border-bottom:2px solid var(--border)">품목명</th>
+                  <th style="padding:7px 10px;border-bottom:2px solid var(--border);width:130px">규격</th>
+                  <th style="padding:7px 10px;border-bottom:2px solid var(--border);width:100px;text-align:right">현재 재고</th>
+                  <th style="padding:7px 10px;border-bottom:2px solid var(--border);width:120px;text-align:right">새 재고수량</th>
+                </tr>
+              </thead>
+              <tbody id="stockManualBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 공통: 작업자 + 확정 -->
+        <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
+          <input type="text" id="stockWorkerName" class="form-input"
+            placeholder="작업자 이름 *필수" style="width:200px">
+          <button id="btnConfirmStock" class="btn btn-primary" disabled>
+            ✅ 재고 업데이트 확정
+          </button>
+          <span id="stockConfirmInfo" style="font-size:12px;color:var(--text2)"></span>
+        </div>
+      </div>
+
       <div id="uploadHistory" class="upload-history">
         <h3 style="font-size:13px;font-weight:700;margin-bottom:8px">📅 업로드 이력</h3>
         <div id="uploadHistoryList"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- ───────── TAB: 판매현황 분석 ───────── -->
+  <div id="tab-sales" class="tab-panel hidden">
+    <div class="card" style="padding:20px">
+
+      <!-- 업로드 영역 -->
+      <div class="sales-upload-bar">
+        <div>
+          <h2 class="sec-title">📊 판매현황 분석</h2>
+          <p class="sec-desc">
+            상세거래(일자·품목코드·수량·공급가액) 또는 월별요약(월별·품목코드·수량) 형식 모두 지원합니다.<br>
+            날짜는 <code>24/01/02-11</code>, <code>2024/01</code>, <code>2024년 1월</code> 등 자동 인식합니다.
+          </p>
+        </div>
+        <div class="sales-upload-controls">
+          <input type="text" id="salesWorker" class="form-input" placeholder="작업자 이름 *필수" style="width:180px">
+          <div id="salesDropzone" class="dropzone sales-dz"
+               onclick="document.getElementById('salesFileInput').click()">
+            <span class="dz-icon" style="font-size:20px">📊</span>
+            <span class="dz-text" style="font-size:12px">판매현황 파일 업로드</span>
+            <span class="dz-sub">.xlsx · .xls · .csv</span>
+          </div>
+          <input type="file" id="salesFileInput" accept=".xlsx,.xls,.csv" hidden>
+          <button id="btnClearSales" class="btn btn-ghost" title="판매데이터 전체 초기화">🗑 초기화</button>
+        </div>
+      </div>
+
+      <div id="salesUploadMsg" class="hidden" style="margin-top:8px;font-size:12px;color:var(--ok);font-weight:600"></div>
+
+      <!-- 분석 결과 -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 10px;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="salesSearch" class="search-box"
+            placeholder="품목코드·품목명 검색" oninput="renderSalesTab(this.value)">
+          <select id="salesProfitFilter" class="sel-filter" onchange="renderSalesTab(document.getElementById('salesSearch').value)">
+            <option value="">수익율 전체</option>
+            <option value="pos">수익 (+)</option>
+            <option value="neg">손실 (-)</option>
+            <option value="nodata">원가 미등록</option>
+          </select>
+          <span id="salesResultInfo" style="font-size:11px;color:#94a3b8"></span>
+        </div>
+        <div style="font-size:11px;color:#94a3b8" id="salesDataRange"></div>
+      </div>
+
+      <div class="table-scroll" style="max-height:calc(100vh - 360px)">
+        <table id="salesTable">
+          <thead id="salesTableHead"></thead>
+          <tbody id="salesTableBody">
+            <tr><td colspan="12" style="text-align:center;padding:40px;color:#94a3b8">
+              판매 데이터가 없습니다. 파일을 업로드하세요.
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </div>
 
@@ -228,13 +362,14 @@
               <th style="width:200px">품목명</th>
               <th style="width:100px;text-align:right">수입가격</th>
               <th style="width:110px;text-align:right">맥산생산원가</th>
-              <th style="width:100px;text-align:right">생산원가</th>
+              <th style="width:110px;text-align:right">생산원가<small style="display:block;font-weight:400;color:#94a3b8">min(수입,맥산)</small></th>
               <th style="width:100px;text-align:right">표준원가</th>
-              <th style="width:100px;text-align:center">맥산 vs 수입<small style="display:block;font-weight:400;color:#94a3b8">맥산원가 비교</small></th>
-              <th style="width:100px;text-align:center">표준 vs 수입<small style="display:block;font-weight:400;color:#94a3b8">표준원가 비교</small></th>
-              <th style="width:120px">최종수정</th>
-              <th style="width:70px">이력</th>
-              <th style="width:60px">수정</th>
+              <th style="width:90px;text-align:center">맥산vs수입</th>
+              <th style="width:100px;text-align:right">손익금액<small style="display:block;font-weight:400;color:#94a3b8">1개 판매 시</small></th>
+              <th style="width:80px;text-align:center">수익률<small style="display:block;font-weight:400;color:#94a3b8">(판매-표준)/판매</small></th>
+              <th style="width:110px">최종수정</th>
+              <th style="width:60px">이력</th>
+              <th style="width:54px">수정</th>
             </tr>
           </thead>
           <tbody id="tbodyCost"></tbody>
@@ -263,19 +398,36 @@
   <!-- ───────── TAB: 입고 예정 ───────── -->
   <div id="tab-incoming" class="tab-panel hidden">
     <div class="card" style="padding:20px">
-      <h2 class="sec-title" style="margin-bottom:14px">
-        🚢 입고 예정 현황 <small style="font-size:12px;color:#64748b;font-weight:400">총 <span id="incomingTotal">0</span>건</small>
-      </h2>
-      <div class="table-scroll">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+        <div>
+          <h2 class="sec-title">🚢 입고 예정 현황
+            <small style="font-size:12px;color:#64748b;font-weight:400">총 <span id="incomingTotal">0</span>건</small>
+          </h2>
+          <p class="sec-desc" style="margin-bottom:0">실제 입고예정 파일을 업로드하면 자동 반영됩니다.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-outline" onclick="APP.downloadIncomingTemplate()">📥 템플릿</button>
+          <input type="text" id="incomingWorker" class="form-input" placeholder="작업자 이름 *" style="width:150px">
+          <label class="btn btn-primary" style="cursor:pointer;margin:0">
+            📤 파일 업로드
+            <input type="file" id="incomingFileInput" accept=".xlsx,.xls,.csv" hidden>
+          </label>
+          <button id="btnDownloadIncoming" class="btn btn-ghost">⬇ 다운로드</button>
+        </div>
+      </div>
+      <div id="incomingUploadMsg" class="hidden" style="font-size:12px;color:var(--ok);font-weight:600;margin-bottom:8px"></div>
+      <div class="table-scroll" style="max-height:calc(100vh - 320px)">
         <table id="incomingTable">
           <thead>
             <tr>
               <th>발주#</th><th>부서</th><th>품번</th><th>품목명</th>
               <th style="text-align:right">발주수량</th>
-              <th>실발주일</th><th>ETA</th><th>입고예정일</th><th>입고지</th><th>비고</th>
+              <th>실발주일</th><th>ETD</th><th>ETA</th><th>입고예정일</th><th>입고지</th><th>비고</th>
+              <th style="width:60px">출처</th>
             </tr>
           </thead>
           <tbody id="tbodyIncoming"></tbody>
+          <tfoot id="tfootIncoming"></tfoot>
         </table>
       </div>
     </div>
@@ -295,7 +447,40 @@
         <label class="form-label">Supabase Anon Key</label>
         <input type="text" id="sbKey" class="form-input" placeholder="eyJ...">
       </div>
-      <button id="btnSbSave" class="btn btn-primary" style="margin-top:8px">설정 저장 & 연결 테스트</button>
+      <button id="btnSbSave" class="btn btn-primary" style="margin-top:8px">설정 저장 &amp; 연결 테스트</button>
+
+      <hr style="margin:24px 0;border:none;border-top:1px solid #e2e8f0">
+
+      <!-- ── 데이터 동기화 ── -->
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:4px">🔄 데이터 동기화</h3>
+      <p style="font-size:12px;color:#64748b;margin-bottom:14px">
+        어느 PC·브라우저에서도 동일한 데이터를 볼 수 있도록 Supabase와 동기화합니다.<br>
+        <strong>업로드</strong> = 내 PC → Supabase &nbsp;|&nbsp; <strong>다운로드</strong> = Supabase → 내 PC
+      </p>
+
+      <!-- 전체 동기화 버튼 -->
+      <div style="display:flex;gap:10px;margin-bottom:16px">
+        <button id="btnSyncPushAll" class="btn btn-primary" style="flex:1">
+          ☁ 전체 업로드 <small style="display:block;font-weight:400">내 PC → Supabase</small>
+        </button>
+        <button id="btnSyncPullAll" class="btn btn-outline" style="flex:1">
+          ⬇ 전체 다운로드 <small style="display:block;font-weight:400">Supabase → 내 PC</small>
+        </button>
+      </div>
+
+      <!-- 데이터 유형별 동기화 상태 -->
+      <div id="syncMatrix" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px">
+        <div style="background:#f8fafc;padding:8px 12px;font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 120px 1fr">
+          <span>데이터 유형</span><span style="text-align:center">동기화 상태</span><span style="text-align:right">작업</span>
+        </div>
+        <div id="syncMatrixBody"></div>
+      </div>
+
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:16px">
+        ⚠ 다운로드 시 내 PC의 해당 데이터가 <strong>Supabase 데이터로 덮어씌워집니다.</strong>
+        중요한 데이터는 먼저 다운로드(파일저장) 후 진행하세요.
+      </div>
+      <p id="syncActionMsg" style="font-size:12px;margin-bottom:8px"></p>
 
       <hr style="margin:24px 0;border:none;border-top:1px solid #e2e8f0">
 
@@ -326,6 +511,20 @@
   </div>
 
 </main>
+
+<!-- ── 열 필터 드롭다운 ── -->
+<div id="cfDropdown" class="cf-dropdown hidden">
+  <input type="text" id="cfSearch" class="cf-search" placeholder="검색...">
+  <div class="cf-actions">
+    <button onclick="cfSelectAll(true)">전체 선택</button>
+    <button onclick="cfSelectAll(false)">전체 해제</button>
+  </div>
+  <div id="cfList" class="cf-list"></div>
+  <div class="cf-foot">
+    <button onclick="applyCfFilter()" class="cf-apply">적용</button>
+    <button onclick="closeColFilter()" class="cf-cancel">취소</button>
+  </div>
+</div>
 
 <div id="toast" class="toast"></div>
 
