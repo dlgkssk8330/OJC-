@@ -90,8 +90,7 @@ function calcRecQty(item) {
   const inc   = Math.max(0, num(item.incoming) ?? 0);
   const need  = avg * TARGET_MONTHS - stock - inc;
   if (need <= 0) return 0;
-  const step = need > 50000 ? 10000 : need > 10000 ? 5000 : need > 2000 ? 1000 : need > 500 ? 100 : 10;
-  return round(need, step);
+  return Math.ceil(need / 10) * 10;
 }
 
 function calcProjAvail(item, orderQty) {
@@ -1332,6 +1331,79 @@ const APP = window.APP = {
 
     XLSX.writeFile(wb, 'OJC_가격_입력템플릿.xlsx');
     showToast('가격 템플릿 다운로드 완료 (Excel)');
+  },
+
+  // ── 발주계획 전체 엑셀 저장
+  exportPlanExcel() {
+    const rows = getSorted(getFiltered());
+    if (!rows.length) { showToast('내보낼 데이터가 없습니다.'); return; }
+
+    const urgLabel = { urgent:'즉시발주', warning:'발주검토', ok:'여유', na:'—' };
+    const headers = [
+      '조달방식','긴급도','품목코드','품목명','규격','구매처',
+      '월평균(당년)','월평균(전년)','판매추이','리드타임(일)',
+      '현재고','입고예정','가용재고(입고포함·월)','발주후예상가용(월)',
+      '권장발주량','발주수량',
+      '수입가격','맥산생산원가','생산원가','표준원가',
+      '맥산vs수입','손익금액(1개판매)','수익률(%)',
+      '발주시기'
+    ];
+
+    const data = rows.map(it => {
+      const plan     = G.orderPlan[it.code] || {};
+      const orderQty = plan.order_qty != null ? plan.order_qty : (it._recQty || '');
+      const pr       = G.prices[it.code] || {};
+      const proc     = calcProcMethod(it.code);
+      const eff      = calcEffectiveCost(it.code);
+      const std      = calcStdFromEffective(it.code);
+      const profit   = calcProfitAmt(it.code);
+      const rate     = calcProfitRate(it.code);
+      const cmp      = cmpMaeksan(it.code);
+      const timing   = calcTiming(it);
+      const projAvail = calcProjAvail(it, Number(orderQty) || 0);
+      return [
+        proc.text,
+        urgLabel[it._urgency] || '—',
+        it.code,
+        it.name,
+        it.spec || '',
+        it.supplier || '',
+        it.avg_cur  || 0,
+        it.avg_prev || 0,
+        it.trend    || '',
+        it.leadtime || DEFAULT_LEADTIME,
+        it.stock    || 0,
+        it.incoming || 0,
+        it.avail_mo_incl != null ? Math.round(it.avail_mo_incl * 10) / 10 : '',
+        projAvail   != null ? Math.round(projAvail * 10) / 10 : '',
+        it._recQty  || 0,
+        orderQty,
+        num(pr.import_price)  ?? '',
+        num(pr.maeksan_cost)  ?? '',
+        eff  != null ? eff  : '',
+        std  != null ? Math.round(std)    : '',
+        cmp.text.replace(/[✅🔵]/g, '').trim(),
+        profit != null ? Math.round(profit) : '',
+        rate   != null ? Math.round(rate * 10) / 10 : '',
+        timing.text
+      ];
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    ws['!cols'] = [
+      {wch:8},{wch:10},{wch:16},{wch:36},{wch:24},{wch:12},
+      {wch:10},{wch:10},{wch:8},{wch:10},
+      {wch:8},{wch:8},{wch:14},{wch:14},
+      {wch:10},{wch:10},
+      {wch:10},{wch:12},{wch:10},{wch:10},
+      {wch:10},{wch:12},{wch:8},
+      {wch:12}
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, '발주계획');
+    const today = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `OJC_발주계획_${today}.xlsx`);
+    showToast(`발주계획 엑셀 저장 완료 (${rows.length}건)`);
   },
 };
 

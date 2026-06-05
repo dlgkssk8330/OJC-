@@ -95,7 +95,8 @@
         <span style="font-size:11px;color:#94a3b8">개월</span>
         <button id="btnBulkMonths" class="btn btn-primary" style="font-size:12px">일괄 적용</button>
         <span id="bulkMonthsInfo" style="font-size:11px;color:var(--ok);font-weight:600"></span>
-        <span style="font-size:11px;color:#94a3b8;margin-left:auto">※ 확정된 항목 제외 · 월평균 없는 품목 제외</span>
+        <button class="btn btn-outline" onclick="APP.exportPlanExcel()" style="font-size:12px;white-space:nowrap;margin-left:auto">📊 엑셀 저장</button>
+        <span style="font-size:11px;color:#94a3b8">※ 확정된 항목 제외 · 월평균 없는 품목 제외</span>
       </div>
       <div class="toolbar-info" id="resultInfo"></div>
     </div>
