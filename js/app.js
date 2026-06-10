@@ -133,10 +133,13 @@ function calcEffectiveCost(code) {
   return imp ?? mac ?? null;
 }
 
-// ── 비율 정규화: 10 초과이면 퍼센트로 잘못 입력된 것 → 자동 변환 (139 → 1.39)
+// ── 비율 정규화
+// - 10 초과 → ÷100 (139 → 1.39)
+// - 1 미만  → null (0.72 같은 잘못된 값은 기본 비율로 fallback)
 function normalizeRatio(r) {
   if (r === null || r === undefined) return null;
-  return r > 10 ? r / 100 : r;
+  const v = r > 10 ? r / 100 : r;
+  return v >= 1 ? v : null;
 }
 
 // ── 표준원가 (실효 생산원가 × 비율)
@@ -153,18 +156,19 @@ function getSalePrice(code) {
   return analysis?.avgPrice ?? calcStdFromEffective(code);
 }
 
-// ── 손익금액 (1개 판매 시) = 판매단가 - 표준원가
+// ── 손익금액 = 표준원가 - 생산원가
 function calcProfitAmt(code) {
-  const salePrice = getSalePrice(code);          // 실제 판매단가 (없으면 표준원가)
-  const std       = calcStdFromEffective(code);  // 표준원가
-  if (salePrice === null || std === null) return null;
-  return salePrice - std;
+  const std = calcStdFromEffective(code);
+  const eff = calcEffectiveCost(code);
+  if (std === null || eff === null) return null;
+  return std - eff;
 }
 
-// ── 수익률 (총이익률) = (판매단가 - 표준원가) / 판매단가 × 100
-// → 항상 100% 이하 (판매단가 기준 이익 비율)
+// ── 수익률 = (판매단가 - 표준원가) / 판매단가 × 100
+// 판매현황 데이터가 있을 때만 계산 (없으면 null → '—')
 function calcProfitRate(code) {
-  const salePrice = getSalePrice(code);  // 판매단가 = 분모
+  const analysis  = (typeof computeItemSales === 'function') ? computeItemSales(code) : null;
+  const salePrice = analysis?.avgPrice ?? null;  // 판매현황 없으면 null (표준원가 fallback 없음)
   const std       = calcStdFromEffective(code);
   if (salePrice === null || std === null || salePrice === 0) return null;
   return ((salePrice - std) / salePrice) * 100;
@@ -199,7 +203,8 @@ function cmpCost(item) { return { text:'—', cls:'cmp-na' }; } // 호환성 유
 
 // ── 표준원가 계산
 function calcStdCost(prodCost, ratio) {
-  const p = num(prodCost), r = num(ratio) ?? G.stdRatio;
+  const p = num(prodCost);
+  const r = normalizeRatio(num(ratio)) ?? G.stdRatio;
   if (p === null) return null;
   return p * r;
 }
@@ -222,7 +227,7 @@ async function loadData() {
     ]);
     if (sbSettings) {
       G.settings = sbSettings;
-      G.stdRatio = num(sbSettings.std_cost_ratio) ?? DEFAULT_STD_RATIO;
+      G.stdRatio = normalizeRatio(num(sbSettings.std_cost_ratio)) ?? DEFAULT_STD_RATIO;
     }
     G.prices    = sbPrices || {};
     G.orderPlan = sbPlan   || {};
