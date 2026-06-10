@@ -106,7 +106,7 @@ tbody tr:hover td{background:rgba(37,99,235,.03)!important}
 .th-chk{width:34px} .th-proc{width:62px} .th-urg{width:80px} .th-code{width:110px} .th-name{width:190px}
 .th-spec{width:155px} .th-sup{width:76px} .th-avg{width:64px} .th-trend{width:56px}
 .th-lt{width:52px} .th-stock{width:78px} .th-inc{width:76px} .th-avail{width:80px}
-.th-proj{width:76px} .th-rec{width:86px} .th-order{width:106px} .th-timing{width:76px}
+.th-depletion{width:76px} .th-proj{width:76px} .th-rec{width:86px} .th-order{width:106px} .th-timing{width:76px}
 .th-cost{width:90px}
 .cost-col{background:#fafaf0!important}
 td.cost-td{background:#fafaf0;text-align:right}

@@ -64,6 +64,18 @@ async function sha256(msg) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
+// ── 재고소진 예상월 (현재고 + 입고예정 기준)
+function calcDepletionMonth(item) {
+  const avail = num(item.avail_mo_incl);
+  if (avail === null) return null;
+  if (avail <= 0) return { text: '소진', cls: 'av-crit' };
+  const d = new Date();
+  d.setTime(d.getTime() + avail * 30.44 * 24 * 3600 * 1000);
+  const text = `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+  const cls  = avail < 2 ? 'av-crit' : avail < 4 ? 'av-warn' : 'av-ok';
+  return { text, cls };
+}
+
 // ── 가용재고(월) 색상
 function fmtAvail(v) {
   const n = num(v);
@@ -460,6 +472,7 @@ function renderTable() {
         return `${qtyStr}<small style="display:block;font-size:9px;font-weight:700;color:${timingCls}">${t.ym.replace('-','/')} ${t.label}</small>`;
       })()}</td>
       <td class="ctr">${fmtAvail(item.avail_mo_incl)}</td>
+      <td class="ctr">${(() => { const d = calcDepletionMonth(item); return d ? `<span class="${d.cls}">${d.text}</span>` : '<span class="av-na">—</span>'; })()}</td>
       <td class="ctr">${projH}</td>
       <td class="num ${item._recQty?'rec-val':'av-na'}">${item._recQty?fmt(item._recQty):'—'}</td>
       <td class="ctr">
@@ -1347,7 +1360,7 @@ const APP = window.APP = {
     const headers = [
       '조달방식','긴급도','품목코드','품목명','규격','구매처',
       '월평균(당년)','월평균(전년)','판매추이','리드타임(일)',
-      '현재고','입고예정','가용재고(입고포함·월)','발주후예상가용(월)',
+      '현재고','입고예정','가용재고(입고포함·월)','재고소진예상월','발주후예상가용(월)',
       '권장발주량','발주수량',
       '수입가격','맥산생산원가','생산원가','표준원가',
       '맥산vs수입','손익금액(1개판매)','수익률(%)',
@@ -1380,6 +1393,7 @@ const APP = window.APP = {
         it.stock    || 0,
         it.incoming || 0,
         it.avail_mo_incl != null ? Math.round(it.avail_mo_incl * 10) / 10 : '',
+        calcDepletionMonth(it)?.text ?? '',
         projAvail   != null ? Math.round(projAvail * 10) / 10 : '',
         it._recQty  || 0,
         orderQty,
@@ -1399,7 +1413,7 @@ const APP = window.APP = {
     ws['!cols'] = [
       {wch:8},{wch:10},{wch:16},{wch:36},{wch:24},{wch:12},
       {wch:10},{wch:10},{wch:8},{wch:10},
-      {wch:8},{wch:8},{wch:14},{wch:14},
+      {wch:8},{wch:8},{wch:14},{wch:12},{wch:14},
       {wch:10},{wch:10},
       {wch:10},{wch:12},{wch:10},{wch:10},
       {wch:10},{wch:12},{wch:8},
