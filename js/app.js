@@ -2183,8 +2183,8 @@ function renderProjectBar() {
         ${proj.description ? `<span class="proj-active-desc">· ${proj.description}</span>` : ''}
       </div>
       <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
-        <button class="btn btn-ghost" style="font-size:12px;padding:3px 10px" onclick="openProjListModal()">프로젝트 변경</button>
-        <button class="btn btn-primary" style="font-size:12px;padding:4px 10px" onclick="openCreateProjModal()">+ 새 프로젝트</button>
+        <button class="proj-exit-btn" onclick="openProjListModal()" style="font-weight:600">🔀 프로젝트 변경</button>
+        <button class="btn btn-primary" style="font-size:12px;padding:4px 10px;background:#fff;color:var(--primary);border:none" onclick="openCreateProjModal()">+ 새 프로젝트</button>
       </div>
     `;
   } else {
