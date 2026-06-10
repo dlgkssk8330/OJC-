@@ -2137,8 +2137,13 @@ async function createProject(name, dataMode, createdBy, description) {
   };
   if (DB.isReady()) {
     const id = await DB.saveProject(proj).catch(() => null);
-    if (!id) { showToast('프로젝트 저장 실패'); return null; }
-    proj.id = id;
+    if (!id) {
+      // Supabase 실패 시 로컬 저장으로 폴백
+      proj.id = 'local_' + Date.now();
+      showToast('⚠️ Supabase 저장 실패 — 로컬 저장됩니다. Supabase에서 supabase_update_v3.sql을 실행해주세요.');
+    } else {
+      proj.id = id;
+    }
   } else {
     proj.id = 'local_' + Date.now();
   }
@@ -2165,17 +2170,35 @@ function renderProjectBar() {
   const bar = document.getElementById('projBar');
   if (!bar) return;
   const proj = getActiveProj();
-  const label = proj ? proj.name : '기본 발주계획';
-  const badge = proj
-    ? `<span class="proj-badge ${proj.data_mode === 'new' ? 'badge-new' : 'badge-exist'}">${proj.data_mode === 'new' ? '신규데이터' : '기존데이터'}</span>`
-    : '<span class="proj-badge badge-exist">최신 데이터</span>';
-  bar.innerHTML = `
-    <span class="proj-icon">📁</span>
-    <span class="proj-cur-name">${label}</span>
-    ${badge}
-    <button class="btn btn-ghost" style="font-size:12px;padding:3px 10px" onclick="openProjListModal()">전환 ▾</button>
-    <button class="btn btn-primary" style="font-size:12px;padding:4px 10px;margin-left:4px" onclick="openCreateProjModal()">+ 새 프로젝트</button>
-  `;
+
+  if (proj) {
+    const modeBadge = `<span class="proj-badge ${proj.data_mode === 'new' ? 'badge-new' : 'badge-exist'}">${proj.data_mode === 'new' ? '신규데이터' : '기존데이터'}</span>`;
+    bar.className = 'proj-bar proj-bar-active card';
+    bar.innerHTML = `
+      <button class="proj-exit-btn" onclick="switchProject(null)" title="기본 발주계획으로 나가기">◀ 나가기</button>
+      <div class="proj-active-info">
+        <span style="font-size:16px">📁</span>
+        <span class="proj-active-name">${proj.name}</span>
+        ${modeBadge}
+        ${proj.description ? `<span class="proj-active-desc">· ${proj.description}</span>` : ''}
+      </div>
+      <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <button class="btn btn-ghost" style="font-size:12px;padding:3px 10px" onclick="openProjListModal()">프로젝트 변경</button>
+        <button class="btn btn-primary" style="font-size:12px;padding:4px 10px" onclick="openCreateProjModal()">+ 새 프로젝트</button>
+      </div>
+    `;
+  } else {
+    bar.className = 'proj-bar card';
+    bar.innerHTML = `
+      <span style="font-size:14px">📁</span>
+      <span class="proj-cur-name">기본 발주계획</span>
+      <span class="proj-badge badge-exist">최신 데이터</span>
+      <button class="btn btn-outline" style="font-size:12px;padding:3px 12px" onclick="openProjListModal()">
+        프로젝트 목록${G_proj.list.length ? ` (${G_proj.list.length})` : ''}
+      </button>
+      <button class="btn btn-primary" style="font-size:12px;padding:4px 10px" onclick="openCreateProjModal()">+ 새 프로젝트</button>
+    `;
+  }
 }
 
 window.openCreateProjModal = function() {
@@ -2213,27 +2236,48 @@ window.openProjListModal = function() {
 window.closeProjListModal = function() {
   document.getElementById('projListModal').classList.add('hidden');
 };
+window.doSwitchFromList = async function(id) {
+  closeProjListModal();
+  await switchProject(id);
+};
+
 function renderProjListModal() {
   const cont = document.getElementById('projListContent');
   if (!cont) return;
   const all = [
-    { id: null, name: '기본 발주계획', data_mode: 'existing', status: 'draft', created_by: '시스템', created_at: '', description: '' },
+    { id: null, name: '기본 발주계획', data_mode: 'existing', status: 'draft', created_by: '시스템', created_at: '', description: '항상 최신 업로드 데이터 사용' },
     ...G_proj.list,
   ];
   cont.innerHTML = all.map(p => {
     const isActive = G_proj.activeId === p.id;
     const dateStr  = p.created_at ? p.created_at.slice(0, 10) : '';
+    const icon     = p.data_mode === 'new' ? '📤' : '📊';
     const modeBadge = `<span class="proj-badge ${p.data_mode === 'new' ? 'badge-new' : 'badge-exist'}">${p.data_mode === 'new' ? '신규데이터' : '기존데이터'}</span>`;
-    const activeBadge = isActive ? '<span class="proj-badge badge-active">현재</span>' : '';
-    const switchBtn = `<button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="switchProject(${p.id ? `'${p.id}'` : 'null'});closeProjListModal()">전환</button>`;
-    const delBtn = p.id ? `<button class="btn btn-ghost" style="font-size:11px;padding:2px 8px;color:#ef4444" onclick="deleteProject('${p.id}')">삭제</button>` : '';
-    return `<div class="proj-list-row ${isActive ? 'proj-row-active' : ''}">
-      <div class="proj-row-info">
-        <div class="proj-row-top"><span class="proj-row-name">${p.name}</span>${modeBadge}${activeBadge}</div>
-        <div class="proj-row-meta">${dateStr ? dateStr + ' · ' : ''}${p.created_by}${p.description ? ' · ' + p.description : ''}</div>
-      </div>
-      <div class="proj-row-btns">${switchBtn}${delBtn}</div>
-    </div>`;
+    const activeBadge = isActive ? '<span class="proj-badge badge-active">✓ 현재</span>' : '';
+    const delBtn = p.id
+      ? `<button class="proj-del-btn" onclick="event.stopPropagation();deleteProject('${p.id}')" title="삭제">🗑</button>`
+      : '';
+    const enterHint = !isActive ? '<span class="proj-enter-hint">입장 →</span>' : '';
+    const clickAttr = !isActive
+      ? `onclick="doSwitchFromList(${p.id ? `'${p.id}'` : 'null'})" style="cursor:pointer"`
+      : '';
+    return `
+      <div class="proj-list-row ${isActive ? 'proj-row-active' : 'proj-row-clickable'}" ${clickAttr}>
+        <div class="proj-row-icon-wrap">${icon}</div>
+        <div class="proj-row-info">
+          <div class="proj-row-top">
+            <span class="proj-row-name">${p.name}</span>
+            ${modeBadge}${activeBadge}
+          </div>
+          <div class="proj-row-meta">
+            ${[dateStr, p.created_by, p.description].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+        <div class="proj-row-right">
+          ${enterHint}
+          ${delBtn}
+        </div>
+      </div>`;
   }).join('');
 }
 
