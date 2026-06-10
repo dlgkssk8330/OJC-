@@ -64,14 +64,16 @@ async function sha256(msg) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-// ── 재고소진 예상월 (현재고 + 입고예정 기준)
+// ── 재고소진 예상시기 (현재고 + 입고예정 기준, 주차 포함)
 function calcDepletionMonth(item) {
   const avail = num(item.avail_mo_incl);
   if (avail === null) return null;
   if (avail <= 0) return { text: '소진', cls: 'av-crit' };
-  const d = new Date();
+  const d   = new Date();
   d.setTime(d.getTime() + avail * 30.44 * 24 * 3600 * 1000);
-  const text = `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+  const day  = d.getDate();
+  const week = day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : day <= 28 ? 4 : 5;
+  const text = `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${week}주차`;
   const cls  = avail < 2 ? 'av-crit' : avail < 4 ? 'av-warn' : 'av-ok';
   return { text, cls };
 }
