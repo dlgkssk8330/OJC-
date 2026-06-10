@@ -348,4 +348,41 @@ const DB = {
       ip_address: ip, updated_at: new Date().toISOString(),
     }, { onConflict: 'item_code' });
   },
+
+  // ── 발주 프로젝트 ─────────────────────────────────────────
+  async loadProjects() {
+    if (!_sb) return [];
+    const { data } = await _sb.from('order_projects')
+      .select('*').order('created_at', { ascending: false });
+    return data || [];
+  },
+
+  async saveProject(proj) {
+    if (!_sb) return null;
+    const row = {
+      name:        proj.name,
+      data_mode:   proj.data_mode   || 'existing',
+      status:      proj.status      || 'draft',
+      created_by:  proj.created_by  || 'system',
+      description: proj.description || '',
+      order_plan:  proj.order_plan  || {},
+      items:       proj.items       || [],
+      updated_at:  new Date().toISOString(),
+    };
+    if (proj.id) {
+      row.id = proj.id;
+      const { error } = await _sb.from('order_projects').upsert(row, { onConflict: 'id' });
+      if (error) return null;
+      return proj.id;
+    } else {
+      const { data, error } = await _sb.from('order_projects').insert(row).select('id').single();
+      if (error) return null;
+      return data?.id;
+    }
+  },
+
+  async deleteProject(id) {
+    if (!_sb) return;
+    await _sb.from('order_projects').delete().eq('id', id);
+  },
 };

@@ -257,6 +257,8 @@ async function loadData() {
     // localStorage 발주 계획
     try { G.orderPlan = JSON.parse(localStorage.getItem('ojc_order_plan') || '{}'); } catch {}
   }
+  await loadProjects();
+  renderProjectBar();
   updateStats();
   renderTable();
   renderCostTab();
@@ -694,8 +696,9 @@ function updateOrderPlan(code, qty, confirmed, by) {
   if (qty !== undefined && qty !== null) G.orderPlan[code].order_qty = qty;
   if (confirmed !== undefined) G.orderPlan[code].is_confirmed = confirmed;
   if (by) G.orderPlan[code].confirmed_by = by;
-  // 즉시 저장
-  if (DB.isReady()) {
+  if (G_proj.activeId) {
+    schedProjSave();
+  } else if (DB.isReady()) {
     DB.saveOrderPlan(code, qty ?? G.orderPlan[code].order_qty, confirmed, by || '사용자', G.clientIP)
       .catch(() => {});
   } else {
@@ -1567,7 +1570,27 @@ document.getElementById('btnConfirmUpload').addEventListener('click', async () =
     });
   }
   if (!items.length) { showToast('업로드할 품목 데이터가 없습니다.'); return; }
-  if (!confirm(`${items.length}건을 업로드합니다. 기존 데이터가 교체됩니다.\n작업자: ${worker}`)) return;
+  const activeProj = getActiveProj();
+  const isNewProj  = activeProj?.data_mode === 'new';
+  const confirmMsg = isNewProj
+    ? `[프로젝트: ${activeProj.name}]\n${items.length}건을 이 프로젝트 전용 데이터로 저장합니다.`
+    : `${items.length}건을 업로드합니다. 기존 데이터가 교체됩니다.\n작업자: ${worker}`;
+  if (!confirm(confirmMsg)) return;
+
+  if (isNewProj) {
+    const saved = await saveItemsToActiveProject(items);
+    if (saved) {
+      G.uploadParsed = null;
+      document.getElementById('uploadPreview').classList.add('hidden');
+      document.getElementById('uploadColMap').classList.add('hidden');
+      document.getElementById('btnConfirmUpload').disabled = true;
+      document.getElementById('uploaderName').value = '';
+      updateStats(); renderTable(); renderCostTab(); renderProjectBar();
+      showToast(`✅ 프로젝트 "${activeProj.name}"에 ${items.length}건 저장 완료`);
+      return;
+    }
+  }
+
   if (DB.isReady()) {
     const res = await DB.uploadItems(items, worker, G.clientIP);
     if (res.error) { showToast('업로드 오류: ' + res.error); return; }
@@ -2028,6 +2051,203 @@ const _origLoadHistory = loadUploadHistory;
 // ============================================================
 
 let G_incoming = []; // 업로드된 입고예정 데이터
+
+// ── 발주 프로젝트 상태
+let G_proj = {
+  list:     [],   // 전체 프로젝트 목록
+  activeId: null, // null = 기본 발주계획
+};
+let _projSaveTimer = null;
+function schedProjSave() {
+  clearTimeout(_projSaveTimer);
+  _projSaveTimer = setTimeout(saveActiveProject, 1500);
+}
+function getActiveProj() {
+  return G_proj.activeId ? (G_proj.list.find(p => p.id === G_proj.activeId) || null) : null;
+}
+function saveProjectsLocal() {
+  localStorage.setItem('ojc_projects', JSON.stringify(G_proj.list));
+}
+function loadProjectsLocal() {
+  try { G_proj.list = JSON.parse(localStorage.getItem('ojc_projects') || '[]'); } catch {}
+}
+
+async function loadProjects() {
+  if (DB.isReady()) {
+    G_proj.list = (await DB.loadProjects().catch(() => [])) || [];
+    saveProjectsLocal();
+  } else {
+    loadProjectsLocal();
+  }
+}
+
+async function saveActiveProject() {
+  const proj = getActiveProj();
+  if (!proj) return;
+  proj.order_plan = { ...G.orderPlan };
+  proj.updated_at = new Date().toISOString();
+  saveProjectsLocal();
+  if (DB.isReady()) await DB.saveProject(proj).catch(() => {});
+}
+
+async function switchProject(projectId) {
+  await saveActiveProject();
+  G_proj.activeId = projectId;
+
+  if (!projectId) {
+    if (DB.isReady()) {
+      const [plan, items] = await Promise.all([
+        DB.loadOrderPlan().catch(() => ({})),
+        DB.loadLatestItems().catch(() => null),
+      ]);
+      G.orderPlan = plan || {};
+      if (items?.length) G.items = items.map(normalizeItem);
+    } else {
+      try { G.orderPlan = JSON.parse(localStorage.getItem('ojc_order_plan') || '{}'); } catch {}
+    }
+  } else {
+    const proj = G_proj.list.find(p => p.id === projectId);
+    if (!proj) return;
+    G.orderPlan = { ...(proj.order_plan || {}) };
+    if (proj.data_mode === 'new' && proj.items?.length) {
+      G.items = proj.items.map(normalizeItem);
+    } else if (DB.isReady()) {
+      const items = await DB.loadLatestItems().catch(() => null);
+      if (items?.length) G.items = items.map(normalizeItem);
+    }
+  }
+  renderProjectBar();
+  updateStats();
+  renderTable();
+  renderConfirmedTab();
+}
+
+async function createProject(name, dataMode, createdBy, description) {
+  const proj = {
+    id: null,
+    name: name.trim(),
+    data_mode: dataMode,
+    status: 'draft',
+    created_by: createdBy.trim() || '사용자',
+    description: description || '',
+    order_plan: {},
+    items: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (DB.isReady()) {
+    const id = await DB.saveProject(proj).catch(() => null);
+    if (!id) { showToast('프로젝트 저장 실패'); return null; }
+    proj.id = id;
+  } else {
+    proj.id = 'local_' + Date.now();
+  }
+  G_proj.list.unshift(proj);
+  saveProjectsLocal();
+  return proj;
+}
+
+window.deleteProject = async function(id) {
+  if (!confirm('프로젝트를 삭제합니다. 발주수량 데이터가 모두 삭제됩니다. 계속할까요?')) return;
+  G_proj.list = G_proj.list.filter(p => p.id !== id);
+  saveProjectsLocal();
+  if (DB.isReady()) await DB.deleteProject(id).catch(() => {});
+  if (G_proj.activeId === id) {
+    await switchProject(null);
+  } else {
+    renderProjectBar();
+    renderProjListModal();
+  }
+  showToast('프로젝트 삭제 완료');
+};
+
+function renderProjectBar() {
+  const bar = document.getElementById('projBar');
+  if (!bar) return;
+  const proj = getActiveProj();
+  const label = proj ? proj.name : '기본 발주계획';
+  const badge = proj
+    ? `<span class="proj-badge ${proj.data_mode === 'new' ? 'badge-new' : 'badge-exist'}">${proj.data_mode === 'new' ? '신규데이터' : '기존데이터'}</span>`
+    : '<span class="proj-badge badge-exist">최신 데이터</span>';
+  bar.innerHTML = `
+    <span class="proj-icon">📁</span>
+    <span class="proj-cur-name">${label}</span>
+    ${badge}
+    <button class="btn btn-ghost" style="font-size:12px;padding:3px 10px" onclick="openProjListModal()">전환 ▾</button>
+    <button class="btn btn-primary" style="font-size:12px;padding:4px 10px;margin-left:4px" onclick="openCreateProjModal()">+ 새 프로젝트</button>
+  `;
+}
+
+window.openCreateProjModal = function() {
+  document.getElementById('projCreateModal').classList.remove('hidden');
+  document.getElementById('projNameInput').value   = '';
+  document.getElementById('projAuthorInput').value = '';
+  document.getElementById('projDescInput').value   = '';
+  document.querySelector('input[name="projDataMode"][value="existing"]').checked = true;
+  document.getElementById('projNewDataNote').classList.add('hidden');
+};
+window.closeProjCreateModal = function() {
+  document.getElementById('projCreateModal').classList.add('hidden');
+};
+window.onProjDataModeChange = function(val) {
+  document.getElementById('projNewDataNote').classList.toggle('hidden', val !== 'new');
+};
+window.confirmCreateProject = async function() {
+  const name   = document.getElementById('projNameInput').value.trim();
+  const author = document.getElementById('projAuthorInput').value.trim();
+  const desc   = document.getElementById('projDescInput').value.trim();
+  const mode   = document.querySelector('input[name="projDataMode"]:checked')?.value || 'existing';
+  if (!name)   { showToast('프로젝트명을 입력하세요.'); return; }
+  if (!author) { showToast('작성자를 입력하세요.'); return; }
+  const proj = await createProject(name, mode, author, desc);
+  if (!proj) return;
+  closeProjCreateModal();
+  await switchProject(proj.id);
+  showToast(`프로젝트 "${name}" 생성 완료${mode === 'new' ? ' — 데이터 업로드 탭에서 전용 데이터를 업로드하세요.' : ''}`);
+};
+
+window.openProjListModal = function() {
+  renderProjListModal();
+  document.getElementById('projListModal').classList.remove('hidden');
+};
+window.closeProjListModal = function() {
+  document.getElementById('projListModal').classList.add('hidden');
+};
+function renderProjListModal() {
+  const cont = document.getElementById('projListContent');
+  if (!cont) return;
+  const all = [
+    { id: null, name: '기본 발주계획', data_mode: 'existing', status: 'draft', created_by: '시스템', created_at: '', description: '' },
+    ...G_proj.list,
+  ];
+  cont.innerHTML = all.map(p => {
+    const isActive = G_proj.activeId === p.id;
+    const dateStr  = p.created_at ? p.created_at.slice(0, 10) : '';
+    const modeBadge = `<span class="proj-badge ${p.data_mode === 'new' ? 'badge-new' : 'badge-exist'}">${p.data_mode === 'new' ? '신규데이터' : '기존데이터'}</span>`;
+    const activeBadge = isActive ? '<span class="proj-badge badge-active">현재</span>' : '';
+    const switchBtn = `<button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="switchProject(${p.id ? `'${p.id}'` : 'null'});closeProjListModal()">전환</button>`;
+    const delBtn = p.id ? `<button class="btn btn-ghost" style="font-size:11px;padding:2px 8px;color:#ef4444" onclick="deleteProject('${p.id}')">삭제</button>` : '';
+    return `<div class="proj-list-row ${isActive ? 'proj-row-active' : ''}">
+      <div class="proj-row-info">
+        <div class="proj-row-top"><span class="proj-row-name">${p.name}</span>${modeBadge}${activeBadge}</div>
+        <div class="proj-row-meta">${dateStr ? dateStr + ' · ' : ''}${p.created_by}${p.description ? ' · ' + p.description : ''}</div>
+      </div>
+      <div class="proj-row-btns">${switchBtn}${delBtn}</div>
+    </div>`;
+  }).join('');
+}
+
+// 신규 데이터 모드 프로젝트에 아이템 저장
+async function saveItemsToActiveProject(items) {
+  const proj = getActiveProj();
+  if (!proj || proj.data_mode !== 'new') return false;
+  proj.items = items;
+  proj.updated_at = new Date().toISOString();
+  G.items = items.map(normalizeItem);
+  saveProjectsLocal();
+  if (DB.isReady()) await DB.saveProject(proj).catch(() => {});
+  return true;
+}
 
 function loadIncomingData() {
   try { G_incoming = JSON.parse(localStorage.getItem('ojc_incoming_uploaded') || '[]'); } catch {}

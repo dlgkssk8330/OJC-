@@ -63,6 +63,9 @@
 
   <!-- ───────── TAB: 발주 계획 ───────── -->
   <div id="tab-plan" class="tab-panel">
+    <!-- 프로젝트 바 -->
+    <div class="proj-bar card" id="projBar"></div>
+
     <div class="card toolbar-card">
       <div class="toolbar-row">
         <div class="filter-group">
@@ -630,5 +633,66 @@
 <script src="js/data.js"></script>
 <script src="js/incoming.js"></script>
 <script src="js/app.js"></script>
+
+<!-- ── 프로젝트 생성 모달 ── -->
+<div id="projCreateModal" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header"><h3>📁 발주 프로젝트 생성</h3></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label class="form-label">프로젝트명 <span style="color:#ef4444">*</span></label>
+        <input type="text" id="projNameInput" class="form-input" placeholder="예: 2026년 7월 발주계획">
+      </div>
+      <div class="form-row">
+        <label class="form-label">작성자 <span style="color:#ef4444">*</span></label>
+        <input type="text" id="projAuthorInput" class="form-input" placeholder="이름 입력">
+      </div>
+      <div class="form-row">
+        <label class="form-label">데이터 방식</label>
+        <div class="proj-mode-group">
+          <label class="proj-mode-opt">
+            <input type="radio" name="projDataMode" value="existing" checked onchange="onProjDataModeChange('existing')">
+            <div class="proj-mode-card">
+              <div class="proj-mode-title">📊 기존 데이터 활용</div>
+              <div class="proj-mode-desc">현재 업로드된 재고·판매 데이터를 사용합니다. 발주수량만 별도 관리됩니다.</div>
+            </div>
+          </label>
+          <label class="proj-mode-opt">
+            <input type="radio" name="projDataMode" value="new" onchange="onProjDataModeChange('new')">
+            <div class="proj-mode-card">
+              <div class="proj-mode-title">📤 신규 데이터 입력</div>
+              <div class="proj-mode-desc">이 프로젝트 전용 데이터를 업로드합니다. 다른 프로젝트와 독립된 데이터셋을 사용합니다.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div id="projNewDataNote" class="proj-note hidden">
+        💡 프로젝트 생성 후 <b>데이터 업로드</b> 탭에서 이 프로젝트 전용 데이터를 업로드하세요.
+      </div>
+      <div class="form-row">
+        <label class="form-label">설명 (선택)</label>
+        <input type="text" id="projDescInput" class="form-input" placeholder="간단한 설명">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeProjCreateModal()">취소</button>
+      <button class="btn btn-primary" onclick="confirmCreateProject()">프로젝트 생성</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 프로젝트 목록 모달 ── -->
+<div id="projListModal" class="modal-backdrop hidden">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3>📁 발주 프로젝트 목록</h3>
+      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" onclick="closeProjListModal();openCreateProjModal()">+ 새 프로젝트</button>
+    </div>
+    <div class="modal-body" id="projListContent" style="max-height:420px;overflow-y:auto"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeProjListModal()">닫기</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
