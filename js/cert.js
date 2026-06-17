@@ -1,11 +1,9 @@
 'use strict';
 // ============================================================
-// cert.js — 성적서 자동 생성기
-// 참고 양식 구조 반영:
-//   8행 고정 · 품목별 6열(라벨1+데이터4+갭1)씩 우측 확장
-//   열너비: 라벨 14.64ch · 데이터×4 11.79ch · 갭 7.5ch
-//   행높이: 전 행 20.25pt
-//   LINE 행: 노란 배경(FFFF00)
+// cert.js — 3시트 발주 파일 생성기
+//   시트1: 완제품 비축 발주 요청 (VLOOKUP 수식 참조)
+//   시트2: 단가표 (housing/boots 수식 포함)
+//   시트3: 성적서 (8행×2열 블록, 행 방향 적층)
 // ============================================================
 
 const CERT = (() => {
@@ -15,17 +13,47 @@ const CERT = (() => {
 
   // ── 분류 ──────────────────────────────────────────────────
   const isMM  = n => /-MM[-( ]/i.test(n || '');
-  const isFot = s => (s || '').includes('_포앤티');
+  const isFot = s => (s || '').includes('포앤티');
 
-  function classify(name) {
-    return isMM(name) ? 'MM' : 'SM';
-  }
+  function classify(name) { return isMM(name) ? 'MM' : 'SM'; }
 
-  // ── 유형별 스펙 ───────────────────────────────────────────
   const SPECS = {
     SM: { il: '≤0.2dB', pc: '≥50dB', apc: '≥60dB' },
     MM: { il: '≤0.5dB', pc: '≥20dB', apc: '-'     },
   };
+
+  // ── 이름 파서 ─────────────────────────────────────────────
+  function parseMode(name) { return isMM(name) ? 'MM' : 'SM'; }
+
+  function parseCableType(name) {
+    const n = (name || '').toUpperCase();
+    if (n.includes('PIGTAIL')) return 'PIGTAIL';
+    if (n.startsWith('D') || n.includes('DOJC')) return 'DOJC';
+    return 'SOJC';
+  }
+
+  function parseConnectors(name) {
+    const pat = /(SC|LC|FC|ST|E2000)\/(PC|APC)/gi;
+    const ms  = [...(name || '').matchAll(pat)].map(m => m[0].toUpperCase());
+    const isPT = (name || '').toUpperCase().includes('PIGTAIL');
+    return { c1: ms[0] || '', c2: isPT ? '' : (ms[1] || '') };
+  }
+
+  function parseLength(spec) {
+    const m = (spec || '').match(/(\d+(?:\.\d+)?)\s*[Mm]/);
+    return m ? m[1] + 'M' : '';
+  }
+
+  function parseCableSpec(name) {
+    if ((name || '').includes('0.9')) return '0.9mm';
+    if ((name || '').toUpperCase().includes('PIGTAIL')) return '0.9mm';
+    return '2.0mm';
+  }
+
+  function parseFiberCount(name) {
+    const m = (name || '').match(/[-_](\d+)[Cc][-_(]/);
+    return m ? parseInt(m[1], 10) : null;
+  }
 
   // ── 발주 확정 목록에서 불러오기 ────────────────────────────
   function loadFromApp() {
@@ -74,7 +102,7 @@ const CERT = (() => {
     reader.readAsArrayBuffer(file);
   }
 
-  // ── 유형 변경 (미리보기 select에서 호출) ────────────────────
+  // ── 유형 변경 ─────────────────────────────────────────────
   function updateType(idx, type) {
     if (_items[idx]) _items[idx].type = type;
   }
@@ -84,13 +112,11 @@ const CERT = (() => {
     const el  = document.getElementById('certPreviewArea');
     const btn = document.getElementById('btnGenerateCert');
     if (!el) return;
-
     if (!_items.length) {
       el.innerHTML = '<p style="text-align:center;padding:36px;color:#94a3b8">불러온 항목이 없습니다.</p>';
       if (btn) btn.disabled = true;
       return;
     }
-
     el.innerHTML = `
       <div style="font-size:12px;color:#64748b;margin-bottom:8px">
         총 <b>${_items.length}</b>건
@@ -105,7 +131,7 @@ const CERT = (() => {
             <th style="padding:6px 8px;border-bottom:2px solid var(--border);text-align:left">품목명</th>
             <th style="padding:6px 8px;border-bottom:2px solid var(--border);text-align:left">규격</th>
             <th style="padding:6px 8px;border-bottom:2px solid var(--border);width:64px;text-align:right">발주수량</th>
-            <th style="padding:6px 8px;border-bottom:2px solid var(--border);width:80px;text-align:center">유형 (수정가능)</th>
+            <th style="padding:6px 8px;border-bottom:2px solid var(--border);width:80px;text-align:center">유형</th>
           </tr></thead>
           <tbody>${_items.map((it, i) => `
             <tr style="border-bottom:1px solid #f1f5f9">
@@ -127,150 +153,313 @@ const CERT = (() => {
           </tbody>
         </table>
       </div>`;
-
     if (btn) btn.disabled = false;
   }
 
   // ── SheetJS 헬퍼 ──────────────────────────────────────────
   const ENC = XLSX.utils.encode_cell;
 
-  function mkCell(v, s) {
-    return { v, t: typeof v === 'number' ? 'n' : 's', s };
+  function cv(v, s) {
+    return { v, t: typeof v === 'number' ? 'n' : 's', s: s || {} };
   }
-
+  function cf(formula, resultType, s) {
+    return { f: formula, t: resultType || 's', s: s || {} };
+  }
   function addMerge(ws, r0, c0, r1, c1) {
     if (!ws['!merges']) ws['!merges'] = [];
     ws['!merges'].push({ s: { r: r0, c: c0 }, e: { r: r1, c: c1 } });
   }
 
-  // ── 셀 스타일 ─────────────────────────────────────────────
-  const BDR = {
+  // ── 스타일 ────────────────────────────────────────────────
+  const BD = {
     top:    { style: 'thin', color: { rgb: '999999' } },
     bottom: { style: 'thin', color: { rgb: '999999' } },
     left:   { style: 'thin', color: { rgb: '999999' } },
     right:  { style: 'thin', color: { rgb: '999999' } },
   };
-
-  const S = {
-    line: {  // LINE 행 — 노란 배경
-      fill:      { patternType: 'solid', fgColor: { rgb: 'FFFF00' } },
-      alignment: { horizontal: 'center', vertical: 'center' },
-      border:    BDR,
-    },
-    label: {  // 라벨 열
-      alignment: { horizontal: 'center', vertical: 'center' },
-      border:    BDR,
-    },
-    value: {  // 데이터 열
-      alignment: { horizontal: 'center', vertical: 'center' },
-      border:    BDR,
-    },
-    valueL: {  // 좌측 정렬 데이터 (품목명·규격)
-      alignment: { horizontal: 'left', vertical: 'center' },
-      border:    BDR,
-    },
+  const BDB = {
+    top:    { style: 'thin', color: { rgb: '000000' } },
+    bottom: { style: 'thin', color: { rgb: '000000' } },
+    left:   { style: 'thin', color: { rgb: '000000' } },
+    right:  { style: 'thin', color: { rgb: '000000' } },
   };
 
-  // ── 블록 작성 (품목 1건 = 6열 블록) ───────────────────────
-  //  sc = 시작 열 인덱스 (0-based)
-  //  8행 고정: r=0(LINE) ~ r=7(반사손실)
-  function writeBlock(ws, sc, item, lineNum, lotNo) {
-    const d = sc + 1; // 첫 번째 데이터 열
-    const sp = SPECS[item.type] || SPECS.SM;
+  const S = {
+    // 성적서
+    line:   { fill: { patternType:'solid', fgColor:{rgb:'FFFF00'} }, alignment:{horizontal:'center',vertical:'center'}, border: BD },
+    label:  { alignment:{horizontal:'center',vertical:'center'}, border: BD },
+    value:  { alignment:{horizontal:'center',vertical:'center'}, border: BD },
+    valueL: { alignment:{horizontal:'left',vertical:'center'},   border: BD },
+    // 시트1
+    title:  { font:{bold:true,sz:13}, alignment:{horizontal:'center',vertical:'center'} },
+    hdr:    { font:{bold:true}, fill:{patternType:'solid',fgColor:{rgb:'D9D9D9'}}, alignment:{horizontal:'center',vertical:'center'}, border: BDB },
+    hdrL:   { font:{bold:true}, fill:{patternType:'solid',fgColor:{rgb:'D9D9D9'}}, alignment:{horizontal:'left',vertical:'center'},   border: BDB },
+    cell:   { alignment:{horizontal:'left',  vertical:'center',wrapText:true}, border: BDB },
+    cellC:  { alignment:{horizontal:'center',vertical:'center'}, border: BDB },
+    cellR:  { alignment:{horizontal:'right', vertical:'center'}, border: BDB },
+    sum:    { font:{bold:true}, fill:{patternType:'solid',fgColor:{rgb:'EBF1DE'}}, alignment:{horizontal:'right',vertical:'center'}, border: BDB },
+    sumL:   { font:{bold:true}, fill:{patternType:'solid',fgColor:{rgb:'EBF1DE'}}, alignment:{horizontal:'center',vertical:'center'}, border: BDB },
+  };
 
-    // ── r=0: LINE  N  (노란 배경) ──
-    ws[ENC({ r: 0, c: sc })] = mkCell('LINE  ' + lineNum, S.line);
-    // 나머지 4 데이터 열도 노란 배경 (시각적 일관성)
-    for (let i = 1; i <= 4; i++) {
-      ws[ENC({ r: 0, c: sc + i })] = mkCell('', S.line);
-    }
+  // ══════════════════════════════════════════════════════════
+  // 시트2: 단가표
+  // 컬럼: A품번 B품명 C규격 D케이블종류 E케이블MODE F케이블타입
+  //        G커넥터1 H커넥터2 I M수 J케이블규격 K커넥터1단가
+  //        L커넥터2단가 M케이블가격 N단가 O수입가(RMB)
+  //        P(housing수식) Q(boots수식) R(cable)
+  // ══════════════════════════════════════════════════════════
+  function buildDangaSheet(allItems, prices) {
+    const ws = {};
 
-    // ── r=1~5: 라벨 | 값 (데이터 4열 병합) ──
-    const infoRows = [
-      [1, '품           명', item.name,            S.valueL],
-      [2, '규           격', item.spec,            S.valueL],
-      [3, 'L O T   N O .', lotNo,                 S.value],
-      [4, '수           량', item.qty + ' 본',     S.value],
-      [5, '파  장  대  역', '1310nm ~ 1630nm',    S.value],
+    const HDRS = [
+      '품번','품명','규격','케이블 종류','케이블 MODE','케이블 타입',
+      '커넥터1','커넥터2','M수','케이블 규격','커넥터1 단가','커넥터2 단가',
+      '케이블 가격','단가','수입가(RMB)','housing','boots','cable',
     ];
-    infoRows.forEach(([r, label, val, vStyle]) => {
-      ws[ENC({ r, c: sc })] = mkCell(label, S.label);
-      ws[ENC({ r, c: d  })] = mkCell(val,   vStyle);
-      // 빈 병합 셀들
-      ws[ENC({ r, c: d+1 })] = mkCell('', S.value);
-      ws[ENC({ r, c: d+2 })] = mkCell('', S.value);
-      ws[ENC({ r, c: d+3 })] = mkCell('', S.value);
-      addMerge(ws, r, d, r, d + 3);
+    HDRS.forEach((h, c) => {
+      ws[ENC({r:0, c})] = cv(h, S.hdr);
     });
 
-    // ── r=6: 삽입손실 | 유형(병합d:d+1) | 기준(병합d+2:d+3) ──
-    ws[ENC({ r: 6, c: sc   })] = mkCell('삽  입  손  실', S.label);
-    ws[ENC({ r: 6, c: d    })] = mkCell(item.type,  S.value);
-    ws[ENC({ r: 6, c: d+1  })] = mkCell('',         S.value);
-    ws[ENC({ r: 6, c: d+2  })] = mkCell(sp.il,      S.value);
-    ws[ENC({ r: 6, c: d+3  })] = mkCell('',         S.value);
-    addMerge(ws, 6, d,   6, d+1);
-    addMerge(ws, 6, d+2, 6, d+3);
+    // housing 컬러 공식 빌더
+    const connColor = g =>
+      `IF(OR(${g}="SC/PC",${g}="LC/PC"),"blue",IF(OR(${g}="SC/APC",${g}="LC/APC",${g}="FC/APC"),"green",IF(${g}="FC/PC","black","metal")))`;
+    const bootsColor = (g, er) =>
+      `IF(AND(E${er}="MM",OR(${g}="SC/PC",${g}="LC/PC")),"beige",IF(OR(${g}="SC/PC",${g}="LC/PC"),"blue",IF(OR(${g}="SC/APC",${g}="LC/APC",${g}="FC/APC"),"green",IF(${g}="FC/PC","black",""))))`;
 
-    // ── r=7: 반사손실 | PC | 값 | APC | 값 ──
-    ws[ENC({ r: 7, c: sc   })] = mkCell('반  사  손  실', S.label);
-    ws[ENC({ r: 7, c: d    })] = mkCell('PC',     S.value);
-    ws[ENC({ r: 7, c: d+1  })] = mkCell(sp.pc,   S.value);
-    ws[ENC({ r: 7, c: d+2  })] = mkCell('APC',   S.value);
-    ws[ENC({ r: 7, c: d+3  })] = mkCell(sp.apc,  S.value);
-    // 병합 없음 — 각 셀 독립
+    allItems.forEach((item, i) => {
+      const r  = i + 1;
+      const er = r + 1; // Excel 1-based
+      const { c1, c2 } = parseConnectors(item.name);
+      const ctype  = parseCableType(item.name);
+      const mode   = parseMode(item.name);
+      const length = parseLength(item.spec);
+      const cspec  = parseCableSpec(item.name);
+      const p      = prices[item.code] || {};
+      const usd    = Number(p.import_price) || 0;
+      const rmb    = Number(p.maeksan_cost) || 0;
+
+      const row = [
+        item.code, item.name, item.spec, ctype, mode, 'A1',
+        c1, c2, length, cspec,
+        '', '', '',     // 커넥터1단가, 커넥터2단가, 케이블가격 (수동 입력)
+        usd > 0 ? usd : '',
+        rmb > 0 ? rmb : '',
+      ];
+      row.forEach((v, col) => {
+        const st = col >= 13 ? S.cellR : (col === 0 ? S.cell : S.cell);
+        ws[ENC({r, c: col})] = cv(v, st);
+      });
+
+      // P: housing 수식
+      const hF = `G${er}&" "&${connColor(`G${er}`)}&IF(H${er}<>"",", "&H${er}&" "&${connColor(`H${er}`)},"")`;
+      ws[ENC({r, c:15})] = cf(hF, 's', S.cell);
+
+      // Q: boots 수식 (MM+PC→beige, DOJC→ & red)
+      const bF1 = `G${er}&" "&${bootsColor(`G${er}`,er)}&IF(D${er}="DOJC"," & red","")`;
+      const bF2 = `H${er}&" "&${bootsColor(`H${er}`,er)}&IF(D${er}="DOJC"," & red","")`;
+      const bF  = `${bF1}&IF(H${er}<>"",", "&${bF2},"")`;
+      ws[ENC({r, c:16})] = cf(bF, 's', S.cell);
+
+      // R: cable
+      let cable = 'yellow cable';
+      if (ctype === 'PIGTAIL') {
+        const fc = parseFiberCount(item.name);
+        cable = fc ? fc + 'colors' : '';
+      }
+      ws[ENC({r, c:17})] = cv(cable, S.cell);
+    });
+
+    ws['!cols'] = [
+      {wch:15},{wch:42},{wch:16},{wch:10},{wch:10},{wch:8},
+      {wch:12},{wch:12},{wch:7}, {wch:10},{wch:12},{wch:12},
+      {wch:12},{wch:12},{wch:12},{wch:32},{wch:32},{wch:14},
+    ];
+    ws['!ref'] = `A1:R${allItems.length + 1}`;
+    return ws;
   }
 
-  // ── 성적서 Excel 생성 ─────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 시트1: 완제품 비축 발주 요청
+  // 컬럼: A NO. B품목코드 C품목명 D규격 E발주수량
+  //        F단가(VLOOKUP) G합계 H성적서 I LOT J케이블마킹 K spec detail
+  // ══════════════════════════════════════════════════════════
+  function buildOrderSheet(items, ymd) {
+    const ws = {};
+    const DS = 4; // data start row (0-based) → Excel row 5
+
+    // 타이틀 (row 0)
+    ws[ENC({r:0,c:0})] = cv('OJC 완제품 비축 발주 요청 건', S.title);
+    addMerge(ws, 0, 0, 0, 10);
+
+    // 헤더 (row 3)
+    ['No.','품목코드','품목명','규격','발주수량','단가','합계','성적서','LOT','케이블 마킹','spec detail']
+      .forEach((h, c) => { ws[ENC({r:3,c})] = cv(h, c===0?S.hdr:S.hdr); });
+
+    // 데이터 행
+    items.forEach((it, i) => {
+      const r  = DS + i;
+      const er = r + 1; // Excel 1-based
+
+      ws[ENC({r, c:0})] = cv(i + 1, S.cellC);   // No.
+      ws[ENC({r, c:1})] = cv(it.code, S.cell);  // 품목코드
+      ws[ENC({r, c:2})] = cv(it.name, S.cell);  // 품목명 (정적)
+      ws[ENC({r, c:3})] = cv(it.spec, S.cell);  // 규격 (정적)
+      ws[ENC({r, c:4})] = cv(it.qty,  S.cellR); // 발주수량
+
+      // F: 단가 = VLOOKUP(단가표 N열 = 14번째)
+      ws[ENC({r,c:5})] = cf(
+        `IFERROR(VLOOKUP($B${er},단가표!$A:$R,14,0),"")`, 'n', S.cellR);
+
+      // G: 합계 = E * F
+      ws[ENC({r,c:6})] = cf(`IF(OR(B${er}="",F${er}=""),"",E${er}*F${er})`, 'n', S.cellR);
+
+      // H: 성적서 유형
+      ws[ENC({r,c:7})] = cf(
+        `IF(B${er}="","",IF(ISNUMBER(SEARCH("포앤티",D${er})),"포앤티용 성적서","기본 성적서"))`,
+        's', S.cellC);
+
+      // I: LOT
+      ws[ENC({r,c:8})] = cf(
+        `IF(B${er}="","",IF(ISNUMBER(SEARCH("포앤티",D${er})),"FOT${ymd}","AJW${ymd}"))`,
+        's', S.cell);
+
+      // J: 케이블 마킹
+      ws[ENC({r,c:9})] = cf(
+        `IF(B${er}="","",IF(ISNUMBER(SEARCH("PIGTAIL",C${er})),"-",C${er}&"-"&I${er}))`,
+        's', S.cell);
+
+      // K: spec detail (P=16, Q=17, R=18번째 열)
+      ws[ENC({r,c:10})] = cf(
+        `IF(B${er}="","","housing: "&IFERROR(VLOOKUP($B${er},단가표!$A:$R,16,0),"")&` +
+        `"     boots: "&IFERROR(VLOOKUP($B${er},단가표!$A:$R,17,0),"")&` +
+        `"     cable: "&IFERROR(VLOOKUP($B${er},단가표!$A:$R,18,0),""))`,
+        's', S.cell);
+    });
+
+    // 합계 행
+    const sr = DS + items.length;
+    ws[ENC({r:sr,c:0})] = cv('합  계', S.sumL);
+    addMerge(ws, sr, 0, sr, 3);
+    ws[ENC({r:sr,c:4})] = cf(`SUM(E${DS+1}:E${sr})`,     'n', S.sum);
+    ws[ENC({r:sr,c:5})] = cv('', S.sumL);
+    ws[ENC({r:sr,c:6})] = cf(`SUM(G${DS+1}:G${sr})`,     'n', S.sum);
+    for (let c = 7; c <= 10; c++) ws[ENC({r:sr,c})] = cv('', S.sumL);
+
+    ws['!cols'] = [
+      {wch:7},  // A
+      {wch:17}, // B
+      {wch:45}, // C
+      {wch:18}, // D
+      {wch:12}, // E
+      {wch:12}, // F
+      {wch:18}, // G
+      {wch:18}, // H
+      {wch:18}, // I
+      {wch:45}, // J
+      {wch:64}, // K
+    ];
+    ws['!ref'] = `A1:K${sr + 1}`;
+    return ws;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 시트3: 성적서
+  //   · 2개씩 나란히 (sc=0, sc=6), 그룹이 아래로 쌓임
+  //   · 그룹당 8행: LINE | 품명 | 규격 | LOT | 수량 | 파장 | 삽입손실 | 반사손실
+  //   · 항상 12열 고정 (A-L)
+  // ══════════════════════════════════════════════════════════
+  function buildCertSheet(items, ymd) {
+    const ws = {};
+    const GR = 8; // rows per group
+    const BLOCK = 6;
+
+    items.forEach((item, i) => {
+      const gIdx   = Math.floor(i / 2);
+      const inG    = i % 2;         // 0=좌, 1=우
+      const baseR  = gIdx * GR;
+      const sc     = inG * BLOCK;   // 시작 열
+      const d      = sc + 1;        // 첫 데이터 열
+      const sp     = SPECS[item.type] || SPECS.SM;
+      const lotNo  = (item.fot ? 'FOT' : 'AJW') + ymd;
+      const lineN  = i + 1;
+
+      // row 0: LINE N (노란 배경)
+      ws[ENC({r:baseR, c:sc})] = cv('LINE  ' + lineN, S.line);
+      for (let j = 1; j <= 4; j++) ws[ENC({r:baseR, c:sc+j})] = cv('', S.line);
+
+      // rows 1-5: 라벨 | 4열 병합 데이터
+      [
+        [1, '품           명', item.name, S.valueL],
+        [2, '규           격', item.spec, S.valueL],
+        [3, 'L O T   N O .', lotNo,      S.value ],
+        [4, '수           량', item.qty + ' 본', S.value],
+        [5, '파  장  대  역', '1310nm ~ 1630nm', S.value],
+      ].forEach(([off, label, val, vs]) => {
+        const r = baseR + off;
+        ws[ENC({r, c:sc  })] = cv(label, S.label);
+        ws[ENC({r, c:d   })] = cv(val,   vs);
+        ws[ENC({r, c:d+1 })] = cv('',    S.value);
+        ws[ENC({r, c:d+2 })] = cv('',    S.value);
+        ws[ENC({r, c:d+3 })] = cv('',    S.value);
+        addMerge(ws, r, d, r, d+3);
+      });
+
+      // row 6: 삽입손실 | 유형(d:d+1) | 기준(d+2:d+3)
+      const r6 = baseR + 6;
+      ws[ENC({r:r6, c:sc  })] = cv('삽  입  손  실', S.label);
+      ws[ENC({r:r6, c:d   })] = cv(item.type, S.value);
+      ws[ENC({r:r6, c:d+1 })] = cv('',        S.value);
+      ws[ENC({r:r6, c:d+2 })] = cv(sp.il,     S.value);
+      ws[ENC({r:r6, c:d+3 })] = cv('',        S.value);
+      addMerge(ws, r6, d,   r6, d+1);
+      addMerge(ws, r6, d+2, r6, d+3);
+
+      // row 7: 반사손실 | PC | 값 | APC | 값
+      const r7 = baseR + 7;
+      ws[ENC({r:r7, c:sc  })] = cv('반  사  손  실', S.label);
+      ws[ENC({r:r7, c:d   })] = cv('PC',    S.value);
+      ws[ENC({r:r7, c:d+1 })] = cv(sp.pc,  S.value);
+      ws[ENC({r:r7, c:d+2 })] = cv('APC',  S.value);
+      ws[ENC({r:r7, c:d+3 })] = cv(sp.apc, S.value);
+    });
+
+    // 항상 12열 (A-L)
+    ws['!cols'] = [
+      {wch:14.64},{wch:11.79},{wch:11.79},{wch:11.79},{wch:11.79},{wch:7.5},
+      {wch:14.64},{wch:11.79},{wch:11.79},{wch:11.79},{wch:11.79},{wch:7.5},
+    ];
+
+    const totalRows = Math.ceil(items.length / 2) * GR;
+    ws['!rows'] = Array(totalRows).fill(null).map(() => ({ hpt: 20.25 }));
+    ws['!ref']  = `A1:L${totalRows}`;
+    return ws;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 메인 생성
+  // ══════════════════════════════════════════════════════════
   function generate() {
     if (!_items.length) { showToast('항목이 없습니다. 먼저 데이터를 불러오세요.'); return; }
 
-    const today  = new Date();
-    const ymd    = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
-    const lotNo  = 'AJW' + ymd;
+    const today = new Date();
+    const ymd   = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+    const prices   = (typeof G !== 'undefined') ? (G.prices   || {}) : {};
+    const allItems = (typeof G !== 'undefined') ? (G.items    || []) : _items;
 
     const wb = XLSX.utils.book_new();
-    const ws = {};
 
-    const BLOCK = 6; // 라벨1 + 데이터4 + 갭1
+    // 시트 순서: 시트1 → 시트2 → 시트3
+    XLSX.utils.book_append_sheet(wb, buildOrderSheet(_items, ymd), '완제품 비축 발주 요청');
+    XLSX.utils.book_append_sheet(wb, buildDangaSheet(allItems, prices), '단가표');
+    XLSX.utils.book_append_sheet(wb, buildCertSheet(_items, ymd), '성적서');
 
-    // 블록 생성
-    _items.forEach((item, i) => {
-      writeBlock(ws, i * BLOCK, item, i + 1, lotNo);
-    });
-
-    // 열 너비 (참고 파일 실측값)
-    const cols = [];
-    for (let i = 0; i < _items.length; i++) {
-      cols.push({ wch: 14.64 });  // 라벨 열 (210px)
-      cols.push({ wch: 11.79 });  // 데이터1
-      cols.push({ wch: 11.79 });  // 데이터2
-      cols.push({ wch: 11.79 });  // 데이터3
-      cols.push({ wch: 11.79 });  // 데이터4
-      cols.push({ wch: 7.5   });  // 갭 열 (110px)
-    }
-    ws['!cols'] = cols;
-
-    // 행 높이 (참고 파일 실측값: 20.25pt)
-    ws['!rows'] = Array(8).fill(null).map(() => ({ hpt: 20.25 }));
-
-    // 시트 범위
-    const lastCol = _items.length * BLOCK - 1;
-    ws['!ref'] = `A1:${XLSX.utils.encode_col(lastCol)}8`;
-
-    XLSX.utils.book_append_sheet(wb, ws, '성적서');
-
-    const fname = _srcFile
-      ? _srcFile.replace(/\.xlsx?$/i, '_성적서.xlsx')
-      : `성적서_${ymd}.xlsx`;
-
+    const fname = `OJC_발주요청_${ymd}.xlsx`;
     try {
       XLSX.writeFile(wb, fname, { cellStyles: true });
     } catch {
       XLSX.writeFile(wb, fname);
     }
-
-    showToast(`성적서 생성 완료: ${fname}`);
+    showToast(`발주 파일 생성 완료: ${fname} (3시트)`);
   }
 
   // ── 탭 초기화 ─────────────────────────────────────────────

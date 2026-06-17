@@ -59,7 +59,7 @@
     <button class="tab-btn"        data-tab="confirmed">✅ 발주 확정 목록</button>
     <button class="tab-btn"        data-tab="incoming">🚢 입고 예정</button>
     <button class="tab-btn"        data-tab="sync">☁ 동기화 설정</button>
-    <button class="tab-btn"        data-tab="cert">📋 성적서 생성</button>
+    <button class="tab-btn"        data-tab="cert">📋 발주 파일 생성</button>
   </div>
 
   <!-- ───────── TAB: 발주 계획 ───────── -->
@@ -519,10 +519,10 @@
   <!-- ───────── TAB: 성적서 생성 ───────── -->
   <div id="tab-cert" class="tab-panel hidden">
     <div class="card" style="padding:24px;max-width:900px;margin:0 auto">
-      <h2 class="sec-title">📋 성적서 자동 생성</h2>
+      <h2 class="sec-title">📋 발주 파일 생성</h2>
       <p class="sec-desc">
-        발주 확정된 항목의 품목 성적서를 자동으로 생성합니다.<br>
-        SM · MM · 성단용 유형을 자동 분류하여 해당 규격 기준값을 적용합니다.
+        발주 확정 항목으로 3시트 Excel 파일을 자동 생성합니다.<br>
+        <b>시트1</b> 완제품 비축 발주 요청 (단가·합계·LOT·케이블마킹 수식 자동 적용) · <b>시트2</b> 단가표 · <b>시트3</b> 성적서
       </p>
 
       <!-- 유형 기준 안내 -->
@@ -575,9 +575,9 @@
       <!-- 생성 버튼 -->
       <div style="display:flex;align-items:center;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <button id="btnGenerateCert" class="btn btn-primary" onclick="CERT.generate()" disabled>
-          📋 성적서 Excel 다운로드
+          📋 발주 파일 생성 (3시트)
         </button>
-        <span style="font-size:11px;color:#64748b">성적서가 Excel(.xlsx) 파일로 다운로드됩니다</span>
+        <span style="font-size:11px;color:#64748b">시트1(발주요청) · 시트2(단가표) · 시트3(성적서) Excel 파일로 다운로드됩니다</span>
       </div>
     </div>
   </div>
