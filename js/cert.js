@@ -10,7 +10,7 @@ const CERT = (() => {
 
   // ── 분류 규칙 ──────────────────────────────────────────────
   const isMM      = n => /-MM[-( ]/i.test(n || '');
-  const isFot     = s => (s || '').includes('_포엔티');
+  const isFot     = s => (s || '').includes('_포앤티');
   const isSungdan = (n, s) =>
     (n || '').includes('성단용') || (s || '').includes('성단용');
 
