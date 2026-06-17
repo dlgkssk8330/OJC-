@@ -479,3 +479,15 @@ tr.row-confirmed td{background:#faf7ff;opacity:.8}
 .proj-mode-title{font-size:13px;font-weight:700;margin-bottom:4px}
 .proj-mode-desc{font-size:11px;color:var(--text2);line-height:1.5}
 .proj-note{font-size:12px;color:#b45309;background:#fef3c7;border-radius:6px;padding:8px 12px;margin-top:6px}
+
+/* ── 성적서 탭 ── */
+.cert-type-guide{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0;padding:14px;background:#f8fafc;border:1px solid var(--border);border-radius:10px}
+.cert-type-item{display:flex;align-items:flex-start;gap:10px;min-width:200px;flex:1}
+.cert-badge{flex-shrink:0;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap;margin-top:1px}
+.cert-sm{background:#dbeafe;color:#1d4ed8}
+.cert-mm{background:#fef3c7;color:#92400e}
+.cert-sd{background:#dcfce7;color:#166534}
+.cert-fot{background:#f3e8ff;color:#7c3aed}
+.cert-type-name{font-size:12px;font-weight:600;color:var(--text1)}
+.cert-type-spec{font-size:11px;color:var(--text2);margin-top:2px;line-height:1.5}
+.cert-source-row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}

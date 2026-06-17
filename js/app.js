@@ -2935,6 +2935,7 @@ function switchTab(tab) {
   if (tab==='upload')    loadUploadHistory();
   if (tab==='sync')      loadSyncSettings();
   if (tab==='sales')     renderSalesTab(document.getElementById('salesSearch')?.value || '');
+  if (tab==='cert')      CERT.initTab();
 }
 
 // ============================================================
