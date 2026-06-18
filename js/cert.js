@@ -237,28 +237,46 @@ const CERT = (() => {
     left:   { style: 'thin', color: { rgb: '999999' } },
     right:  { style: 'thin', color: { rgb: '999999' } },
   };
-  const BDB = {
-    top:    { style: 'thin', color: { rgb: '000000' } },
-    bottom: { style: 'thin', color: { rgb: '000000' } },
-    left:   { style: 'thin', color: { rgb: '000000' } },
-    right:  { style: 'thin', color: { rgb: '000000' } },
-  };
 
   const S = {
-    // 성적서
-    line:   { fill: { patternType:'solid', fgColor:{rgb:'FFFF00'} }, alignment:{horizontal:'center',vertical:'center'}, border: BD },
-    label:  { alignment:{horizontal:'center',vertical:'center'}, border: BD },
-    value:  { alignment:{horizontal:'center',vertical:'center'}, border: BD },
-    valueL: { alignment:{horizontal:'left',vertical:'center'},   border: BD },
-    // 시트1
-    title:  { font:{bold:true,sz:13}, alignment:{horizontal:'center',vertical:'center'} },
-    hdr:    { font:{bold:true}, fill:{patternType:'solid',fgColor:{rgb:'D9D9D9'}}, alignment:{horizontal:'center',vertical:'center'}, border: BDB },
-    hdrL:   { font:{bold:true}, fill:{patternType:'solid',fgColor:{rgb:'D9D9D9'}}, alignment:{horizontal:'left',vertical:'center'},   border: BDB },
-    cell:   { alignment:{horizontal:'left',  vertical:'center',wrapText:true}, border: BDB },
-    cellC:  { alignment:{horizontal:'center',vertical:'center'}, border: BDB },
-    cellR:  { alignment:{horizontal:'right', vertical:'center'}, border: BDB },
-    sum:    { font:{bold:true}, fill:{patternType:'solid',fgColor:{rgb:'EBF1DE'}}, alignment:{horizontal:'right',vertical:'center'}, border: BDB },
-    sumL:   { font:{bold:true}, fill:{patternType:'solid',fgColor:{rgb:'EBF1DE'}}, alignment:{horizontal:'center',vertical:'center'}, border: BDB },
+    // 성적서 (맑은 고딕 9pt bold, 라인행은 나눔고딕 11pt)
+    line:   { fill:{ patternType:'solid', fgColor:{rgb:'FFFF00'}, bgColor:{indexed:64} },
+              font:{ name:'나눔고딕', sz:11 },
+              alignment:{ horizontal:'center', vertical:'center' } },
+    label:  { font:{ name:'맑은 고딕', sz:9, bold:true },
+              alignment:{ horizontal:'center', vertical:'center' }, border: BD },
+    value:  { font:{ name:'맑은 고딕', sz:9, bold:true },
+              alignment:{ horizontal:'center', vertical:'center' }, border: BD },
+    valueL: { font:{ name:'맑은 고딕', sz:9, bold:true },
+              alignment:{ horizontal:'left',   vertical:'center' }, border: BD },
+    // 시트1 (Dotum 12pt)
+    title:  { font:{ bold:true, sz:14, name:'나눔고딕' },
+              alignment:{ horizontal:'center', vertical:'center' } },
+    hdr:    { font:{ bold:true, name:'Dotum', sz:12 },
+              fill:{ patternType:'solid', fgColor:{rgb:'F7F7F7'} },
+              alignment:{ horizontal:'center', vertical:'center', wrapText:true },
+              border: BD },
+    hdrL:   { font:{ bold:true, name:'Dotum', sz:12 },
+              fill:{ patternType:'solid', fgColor:{rgb:'F7F7F7'} },
+              alignment:{ horizontal:'left', vertical:'center', wrapText:true },
+              border: BD },
+    cell:   { font:{ name:'Dotum', sz:12 },
+              alignment:{ horizontal:'left', vertical:'center', wrapText:true },
+              border: BD },
+    cellC:  { font:{ name:'Dotum', sz:12 },
+              alignment:{ horizontal:'center', vertical:'center' },
+              border: BD },
+    cellR:  { font:{ name:'Dotum', sz:12 },
+              alignment:{ horizontal:'right',  vertical:'center' },
+              border: BD },
+    sum:    { font:{ bold:true, name:'Dotum', sz:12 },
+              fill:{ patternType:'solid', fgColor:{rgb:'EBF1DE'} },
+              alignment:{ horizontal:'right',  vertical:'center' },
+              border: BD },
+    sumL:   { font:{ bold:true, name:'Dotum', sz:12 },
+              fill:{ patternType:'solid', fgColor:{rgb:'EBF1DE'} },
+              alignment:{ horizontal:'center', vertical:'center' },
+              border: BD },
   };
 
   // ══════════════════════════════════════════════════════════
@@ -409,18 +427,28 @@ const CERT = (() => {
     for (let c = 7; c <= 10; c++) ws[ENC({r:sr,c})] = cv('', S.sumL);
 
     ws['!cols'] = [
-      {wch:7},  // A
-      {wch:17}, // B
-      {wch:45}, // C
-      {wch:18}, // D
-      {wch:12}, // E
-      {wch:12}, // F
-      {wch:18}, // G
-      {wch:18}, // H
-      {wch:18}, // I
-      {wch:45}, // J
-      {wch:64}, // K
+      {wch:7},      // A: No.
+      {wch:32.57},  // B: 품목코드
+      {wch:48.86},  // C: 품목명
+      {wch:39.71},  // D: 규격
+      {wch:12.43},  // E: 발주수량
+      {wch:11.14},  // F: 단가
+      {wch:17.29},  // G: 합계
+      {wch:17.29},  // H: 성적서
+      {wch:13},     // I: LOT
+      {wch:44.43},  // J: 케이블 마킹
+      {wch:110.57}, // K: spec detail
     ];
+    // 행 높이: 타이틀 15pt, 헤더 28.5pt, 데이터 25.5pt
+    const rowHeights = [
+      { hpt: 15 },   // row 0: 타이틀
+      { hpt: 15 },   // row 1: (빈 행)
+      null,          // row 2: (자동)
+      { hpt: 28.5 }, // row 3: 헤더
+      ...items.map(() => ({ hpt: 25.5 })),
+      { hpt: 25.5 }, // 합계 행
+    ];
+    ws['!rows'] = rowHeights;
     ws['!ref'] = `A1:K${sr + 1}`;
     return ws;
   }
@@ -446,9 +474,8 @@ const CERT = (() => {
       const lotNo  = (item.fot ? 'FOT' : 'AJW') + ymd;
       const lineN  = i + 1;
 
-      // row 0: LINE N (노란 배경)
+      // row 0: LINE N — 참조 파일과 동일하게 A(또는 G) 셀만 노란 배경
       ws[ENC({r:baseR, c:sc})] = cv('LINE  ' + lineN, S.line);
-      for (let j = 1; j <= 4; j++) ws[ENC({r:baseR, c:sc+j})] = cv('', S.line);
 
       // rows 1-5: 라벨 | 4열 병합 데이터
       const waveband = item.type === 'MM' ? '850nm ~ 1300nm' : '1310nm ~ 1630nm';
@@ -494,10 +521,10 @@ const CERT = (() => {
       }
     });
 
-    // 항상 12열 (A-L)
+    // 12열 고정 — 참조 파일 열 너비 그대로
     ws['!cols'] = [
-      {wch:14.64},{wch:11.79},{wch:11.79},{wch:11.79},{wch:11.79},{wch:7.5},
-      {wch:14.64},{wch:11.79},{wch:11.79},{wch:11.79},{wch:11.79},{wch:7.5},
+      {wch:14.29},{wch:11.43},{wch:11.43},{wch:11.43},{wch:11.43},{wch:7.14},
+      {wch:14.29},{wch:11.43},{wch:11.43},{wch:11.43},{wch:11.43},{wch:9.14},
     ];
 
     const totalRows = Math.ceil(items.length / 2) * GR;
