@@ -19,7 +19,7 @@ const CERT = (() => {
 
   const SPECS = {
     SM: { il: '≤0.2dB', pc: '≥50dB', apc: '≥60dB' },
-    MM: { il: '≤0.5dB', pc: '≥20dB', apc: '-'     },
+    MM: { il: '≤0.3dB', pc: '',      apc: ''       },  // MM 반사손실 미기재
   };
 
   // ── 이름 파서 ─────────────────────────────────────────────
@@ -221,10 +221,12 @@ const CERT = (() => {
     });
 
     // housing 컬러 공식 빌더
+    // FC 타입은 하우징이 금속(metal) → SC/PC,LC/PC만 blue, SC/APC,LC/APC만 green
     const connColor = g =>
-      `IF(OR(${g}="SC/PC",${g}="LC/PC"),"blue",IF(OR(${g}="SC/APC",${g}="LC/APC",${g}="FC/APC"),"green",IF(${g}="FC/PC","black","metal")))`;
+      `IF(OR(${g}="SC/PC",${g}="LC/PC"),"blue",IF(OR(${g}="SC/APC",${g}="LC/APC"),"green","metal"))`;
+    // boots: SOJC/DOJC(=LG) + MM + SC/PC,LC/PC → beige, FC/PC → black
     const bootsColor = (g, er) =>
-      `IF(AND(E${er}="MM",OR(${g}="SC/PC",${g}="LC/PC")),"beige",IF(OR(${g}="SC/PC",${g}="LC/PC"),"blue",IF(OR(${g}="SC/APC",${g}="LC/APC",${g}="FC/APC"),"green",IF(${g}="FC/PC","black",""))))`;
+      `IF(AND(OR(LEFT(B${er},1)="S",LEFT(B${er},1)="D"),E${er}="MM",OR(${g}="SC/PC",${g}="LC/PC")),"beige",IF(OR(${g}="SC/PC",${g}="LC/PC"),"blue",IF(OR(${g}="SC/APC",${g}="LC/APC",${g}="FC/APC"),"green",IF(${g}="FC/PC","black",""))))`;
 
     allItems.forEach((item, i) => {
       const r  = i + 1;
@@ -388,12 +390,13 @@ const CERT = (() => {
       for (let j = 1; j <= 4; j++) ws[ENC({r:baseR, c:sc+j})] = cv('', S.line);
 
       // rows 1-5: 라벨 | 4열 병합 데이터
+      const waveband = item.type === 'MM' ? '850nm ~ 1300nm' : '1310nm ~ 1630nm';
       [
         [1, '품           명', item.name, S.valueL],
         [2, '규           격', item.spec, S.valueL],
         [3, 'L O T   N O .', lotNo,      S.value ],
         [4, '수           량', item.qty + ' 본', S.value],
-        [5, '파  장  대  역', '1310nm ~ 1630nm', S.value],
+        [5, '파  장  대  역', waveband,           S.value],
       ].forEach(([off, label, val, vs]) => {
         const r = baseR + off;
         ws[ENC({r, c:sc  })] = cv(label, S.label);
@@ -414,13 +417,20 @@ const CERT = (() => {
       addMerge(ws, r6, d,   r6, d+1);
       addMerge(ws, r6, d+2, r6, d+3);
 
-      // row 7: 반사손실 | PC | 값 | APC | 값
+      // row 7: 반사손실 | PC | 값 | APC | 값  (MM은 미기재 → 공백)
       const r7 = baseR + 7;
       ws[ENC({r:r7, c:sc  })] = cv('반  사  손  실', S.label);
-      ws[ENC({r:r7, c:d   })] = cv('PC',    S.value);
-      ws[ENC({r:r7, c:d+1 })] = cv(sp.pc,  S.value);
-      ws[ENC({r:r7, c:d+2 })] = cv('APC',  S.value);
-      ws[ENC({r:r7, c:d+3 })] = cv(sp.apc, S.value);
+      if (sp.pc || sp.apc) {
+        ws[ENC({r:r7, c:d   })] = cv('PC',    S.value);
+        ws[ENC({r:r7, c:d+1 })] = cv(sp.pc,  S.value);
+        ws[ENC({r:r7, c:d+2 })] = cv('APC',  S.value);
+        ws[ENC({r:r7, c:d+3 })] = cv(sp.apc, S.value);
+      } else {
+        ws[ENC({r:r7, c:d   })] = cv('', S.value);
+        ws[ENC({r:r7, c:d+1 })] = cv('', S.value);
+        ws[ENC({r:r7, c:d+2 })] = cv('', S.value);
+        ws[ENC({r:r7, c:d+3 })] = cv('', S.value);
+      }
     });
 
     // 항상 12열 (A-L)
