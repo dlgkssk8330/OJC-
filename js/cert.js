@@ -25,23 +25,83 @@ const CERT = (() => {
   // ── 이름 파서 ─────────────────────────────────────────────
   function parseMode(name) { return isMM(name) ? 'MM' : 'SM'; }
 
+  // 케이블 종류: PIGTAIL / SOJC / DOJC / MOJC
+  // KT OJC 품명: -SP 접미→SOJC, -DP 접미→DOJC
   function parseCableType(name) {
     const n = (name || '').toUpperCase();
     if (n.includes('PIGTAIL')) return 'PIGTAIL';
-    if (n.startsWith('D') || n.includes('DOJC')) return 'DOJC';
+    if (n.startsWith('DOJC')) return 'DOJC';
+    if (n.startsWith('SOJC')) return 'SOJC';
+    if (n.startsWith('MOJC')) return 'MOJC';
+    if (/[-_]DP(?:[-_]|$)/.test(n)) return 'DOJC';   // KT DP
+    if (/[-_]SP(?:[-_]|$)/.test(n)) return 'SOJC';   // KT SP
     return 'SOJC';
   }
 
-  function parseConnectors(name) {
-    const pat = /(SC|LC|FC|ST|E2000)\/(PC|APC)/gi;
-    const ms  = [...(name || '').matchAll(pat)].map(m => m[0].toUpperCase());
-    const isPT = (name || '').toUpperCase().includes('PIGTAIL');
-    return { c1: ms[0] || '', c2: isPT ? '' : (ms[1] || '') };
+  // 케이블 타입: A1/A2/C2 (KT OJC 전용)
+  function parseCableKind(name) {
+    const m = (name || '').toUpperCase().match(/^OJC-([A-Z]\d)/);
+    return m ? m[1] : 'A1';
   }
 
-  function parseLength(spec) {
-    const m = (spec || '').match(/(\d+(?:\.\d+)?)\s*[Mm]/);
-    return m ? m[1] + 'M' : '';
+  // ── 커넥터 파서 ───────────────────────────────────────────
+  // KT 품명: OJC-[A1]-[SC/SC]-[SM/MM]-[길이]-[PC/PC]-[SP/DP/nC]
+  //          커넥터A/커넥터B 따로, 페룰A/페룰B 따로 → 합쳐서 SC/PC
+  // LG 품명: SOJC-SM-[SC/PC]-[SC/PC]-3M-G657B3
+  //          직접 SC/PC 형식
+  function parseConnectors(name) {
+    const n = (name || '').toUpperCase();
+    const isPigtail = n.includes('PIGTAIL');
+
+    if (isPigtail) {
+      const m = n.match(/(SC|LC|FC|ST)\/(PC|APC)/);
+      return { c1: m ? m[0] : '', c2: '' };
+    }
+
+    const parts = n.split('-');
+
+    if (parts[0] === 'OJC') {
+      // 커넥터 필드: SC/SC, SC/LC, LC/LC 등 (양쪽 모두 커넥터명)
+      const connField = parts.find(p => /^(SC|LC|FC|ST)\/(SC|LC|FC|ST)$/.test(p));
+      // 페룰 필드: PC/PC, APC/APC, PC/APC 등
+      const ferrField = parts.find(p => /^(PC|APC)\/(PC|APC)$/.test(p));
+      if (connField && ferrField) {
+        const [cA, cB] = connField.split('/');
+        const [fA, fB] = ferrField.split('/');
+        return { c1: `${cA}/${fA}`, c2: `${cB}/${fB}` };
+      }
+      // 폴백: SC/PC 직접 패턴
+      const ms = [...n.matchAll(/(SC|LC|FC|ST)\/(PC|APC)/g)].map(m => m[0]);
+      return { c1: ms[0] || '', c2: ms[1] || ms[0] || '' };
+    }
+
+    if (/^(SOJC|DOJC|MOJC)/.test(parts[0])) {
+      // LG: 필드 중 SC/PC 형식 직접 추출
+      const connPat = /^(SC|LC|FC|ST)\/(PC|APC)$/;
+      const conns = parts.filter(p => connPat.test(p));
+      return { c1: conns[0] || '', c2: conns[1] || '' };
+    }
+
+    // 일반 폴백
+    const ms = [...n.matchAll(/(SC|LC|FC|ST)\/(PC|APC)/g)].map(m => m[0]);
+    return { c1: ms[0] || '', c2: ms[1] || '' };
+  }
+
+  // M수: 규격 → 품명 KT (-SM-3-) → 품명 LG (-3M-) 순으로 탐색
+  function parseLength(spec, name) {
+    let m = (spec || '').match(/(\d+(?:\.\d+)?)\s*M\b/i);
+    if (m) return m[1] + 'M';
+    // LG: -3M-
+    m = (name || '').match(/[-_](\d+(?:\.\d+)?)M[-_]/i);
+    if (m) return m[1] + 'M';
+    // KT: -SM-3- 또는 -MM-3-
+    const parts = (name || '').toUpperCase().split('-');
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (/^(SM|MM)$/.test(parts[i]) && /^\d+(?:\.\d+)?$/.test(parts[i+1])) {
+        return parts[i+1] + 'M';
+      }
+    }
+    return '';
   }
 
   function parseCableSpec(name) {
@@ -234,14 +294,15 @@ const CERT = (() => {
       const { c1, c2 } = parseConnectors(item.name);
       const ctype  = parseCableType(item.name);
       const mode   = parseMode(item.name);
-      const length = parseLength(item.spec);
+      const cKind  = parseCableKind(item.name);       // A1/A2/C2
+      const length = parseLength(item.spec, item.name);
       const cspec  = parseCableSpec(item.name);
       const p      = prices[item.code] || {};
       const usd    = Number(p.import_price) || 0;
       const rmb    = Number(p.maeksan_cost) || 0;
 
       const row = [
-        item.code, item.name, item.spec, ctype, mode, 'A1',
+        item.code, item.name, item.spec, ctype, mode, cKind,
         c1, c2, length, cspec,
         '', '', '',     // 커넥터1단가, 커넥터2단가, 케이블가격 (수동 입력)
         usd > 0 ? usd : '',
