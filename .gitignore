@@ -14,3 +14,14 @@ Thumbs.db
 # 에디터
 .vscode/
 *.swp
+
+.vercel
+.env*
+
+# npm
+node_modules/
+package.json
+package-lock.json
+
+# PDF 매뉴얼 (대외비)
+*.pdf
